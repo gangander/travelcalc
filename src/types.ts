@@ -36,6 +36,7 @@ export type Trip = {
 }
 
 export type CardSettings = {
+  bank?: string
   name: string
   feePercent: number
   rewardPercent: number
