@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import {
-  ArrowDownUp, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, CreditCard,
-  History, MoreHorizontal, Plane, Plus, RefreshCw, Settings2, Sparkles, Trash2, WalletCards, X,
+  ArrowDownUp, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, CreditCard, Heart,
+  History, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, Settings2, ShoppingBag, Sparkles, Trash2, WalletCards, X,
 } from 'lucide-react'
 import { cachedRate, fetchTwdKrwRate, saveManualRate } from './rate-service'
 import { loadStored, saveStored } from './storage'
-import type { CardSettings, ConversionRecord, CurrencyCode, ExchangeRate, Expense, Trip } from './types'
+import type { CardSettings, ConversionRecord, CurrencyCode, ExchangeRate, Expense, SavedProduct, Trip } from './types'
 
 type Currency = { code: CurrencyCode; symbol: string; flag: string; name: string }
-type Tab = 'convert' | 'trips' | 'wallet'
+type Tab = 'convert' | 'shop' | 'trips' | 'wallet'
 type Sheet = 'settings' | 'history' | 'expense' | 'trip' | null
 
 const TWD: Currency = { code: 'TWD', symbol: 'NT$', flag: '🇹🇼', name: '新台幣' }
@@ -35,6 +35,7 @@ function App() {
   const [trips, setTrips] = useState<Trip[]>(() => loadStored('travelcalc:trips', [DEFAULT_TRIP]))
   const [activeTripId, setActiveTripId] = useState(() => loadStored('travelcalc:activeTrip', 'seoul'))
   const [card, setCard] = useState<CardSettings>(() => loadStored('travelcalc:card', DEFAULT_CARD))
+  const [products, setProducts] = useState<SavedProduct[]>(() => loadStored('travelcalc:products', []))
   const [toast, setToast] = useState('')
 
   const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0]
@@ -51,6 +52,7 @@ function App() {
   useEffect(() => { saveStored('travelcalc:trips', trips) }, [trips])
   useEffect(() => { saveStored('travelcalc:activeTrip', activeTripId) }, [activeTripId])
   useEffect(() => { saveStored('travelcalc:card', card) }, [card])
+  useEffect(() => { saveStored('travelcalc:products', products) }, [products])
   useEffect(() => { void refreshRate() }, [])
   useEffect(() => {
     if (!toast) return
@@ -101,6 +103,7 @@ function App() {
     setTrips([DEFAULT_TRIP])
     setActiveTripId(DEFAULT_TRIP.id)
     setCard(DEFAULT_CARD)
+    setProducts([])
     setSheet(null)
     setToast('已清除旅行資料')
   }
@@ -115,11 +118,13 @@ function App() {
         </header>
 
         {tab === 'convert' && <ConvertView from={from} to={to} amount={amount} converted={converted} rate={rate} loading={rateLoading} error={rateError} todaySpent={todaySpent} trip={activeTrip} onAmount={setAmount} onSwap={swap} onRefresh={refreshRate} onSettings={() => { setRateDraft(String(rate.rate)); setSheet('settings') }} onRecord={saveConversion} onWallet={() => setTab('wallet')} onHistory={() => setSheet('history')} onExpense={() => setSheet('expense')} onTrip={() => setTab('trips')} />}
+        {tab === 'shop' && <ShoppingView rate={rate.rate} products={products} onSave={(product) => { setProducts((current) => [product, ...current]); setToast('商品已收藏') }} onDelete={(id) => setProducts((current) => current.filter((product) => product.id !== id))} onExpense={(product) => { if (!activeTrip) return setToast('請先建立旅程'); const total = product.priceKrw * product.quantity; const expense: Expense = { id: newId(), title: product.name, amount: total, currency: 'KRW', twdAmount: total / rate.rate, category: '購物', createdAt: new Date().toISOString() }; setTrips((current) => current.map((trip) => trip.id === activeTrip.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setToast('已加入旅程花費') }} />}
         {tab === 'trips' && <TripsView trips={trips} activeTripId={activeTripId} rate={rate.rate} onSelect={setActiveTripId} onAdd={() => setSheet('trip')} onExpense={() => setSheet('expense')} />}
         {tab === 'wallet' && <WalletView card={card} setCard={setCard} base={cardBaseTwd} fee={cardFee} reward={cardReward} net={cardNet} amount={numericAmount} from={from} />}
 
         <nav className="bottom-nav" aria-label="主要導覽">
           <button className={tab === 'convert' ? 'active' : ''} onClick={() => setTab('convert')}><ArrowDownUp size={19} />換算</button>
+          <button className={tab === 'shop' ? 'active' : ''} onClick={() => setTab('shop')}><ShoppingBag size={19} />購物</button>
           <button className={tab === 'trips' ? 'active' : ''} onClick={() => setTab('trips')}><Plane size={19} />旅程</button>
           <button className={tab === 'wallet' ? 'active' : ''} onClick={() => setTab('wallet')}><WalletCards size={19} />錢包</button>
         </nav>
@@ -168,6 +173,34 @@ function TripsView({ trips, activeTripId, rate, onSelect, onAdd, onExpense }: { 
     <div className="section-title"><h3>旅程列表</h3><button onClick={onAdd}>新增</button></div>
     <div className="trip-list">{trips.map((trip) => { const total = trip.expenses.reduce((sum, expense) => sum + expense.twdAmount, 0); return <button key={trip.id} className={`trip-list-item ${trip.id === activeTripId ? 'selected' : ''}`} onClick={() => onSelect(trip.id)}><span className="destination-icon">🇰🇷</span><div><strong>{trip.name}</strong><small><CalendarDays size={11} /> {trip.startDate} · {trip.expenses.length} 筆</small></div><div className="list-amount"><strong>NT$ {moneyFormat.format(total)}</strong><small>約 ₩{moneyFormat.format(total * rate)}</small></div>{trip.id === activeTripId && <Check size={15} />}</button> })}</div>
     <button className="primary-action" onClick={onExpense}><Plus size={17} />新增目前旅程花費</button>
+  </section>
+}
+
+function ShoppingView({ rate, products, onSave, onDelete, onExpense }: { rate: number; products: SavedProduct[]; onSave: (product: SavedProduct) => void; onDelete: (id: string) => void; onExpense: (product: SavedProduct) => void }) {
+  const [name, setName] = useState('')
+  const [price, setPrice] = useState('50000')
+  const [quantity, setQuantity] = useState('1')
+  const [refundRate, setRefundRate] = useState('7')
+  const totalKrw = (Number(price) || 0) * Math.max(1, Number(quantity) || 1)
+  const estimatedRefund = totalKrw * (Number(refundRate) || 0) / 100
+  const afterRefund = totalKrw - estimatedRefund
+  const eligible = totalKrw >= 15000
+  const immediateEligible = eligible && totalKrw < 1_000_000
+
+  function productFromForm(): SavedProduct | null {
+    if (!name.trim() || totalKrw <= 0) return null
+    return { id: newId(), name: name.trim(), priceKrw: Number(price), quantity: Math.max(1, Number(quantity) || 1), refundRate: Number(refundRate) || 0, createdAt: new Date().toISOString() }
+  }
+
+  return <section className="page-view shopping-view">
+    <div className="page-heading"><div><p>Korea tax refund</p><h2>購物試算</h2></div><span className="wallet-badge"><ShoppingBag size={19} /></span></div>
+    <div className="tax-rule-card"><span className="tax-icon"><ReceiptText size={19} /></span><div><strong>{eligible ? (immediateEligible ? '符合即時退稅金額' : '可申請一般退稅') : '尚未達退稅門檻'}</strong><small>單筆滿 ₩15,000 · 購買後 3 個月內離境</small></div><span className={`eligibility ${eligible ? 'yes' : ''}`}>{eligible ? '符合' : '未達'}</span></div>
+    <div className="form-card shopping-form"><label>商品名稱<input placeholder="例如：Olive Young 保養品" value={name} onChange={(e) => setName(e.target.value)} /></label><div className="form-grid"><label>單價 KRW<input inputMode="numeric" value={price} onChange={(e) => setPrice(cleanNumber(e.target.value))} /></label><label>數量<input inputMode="numeric" value={quantity} onChange={(e) => setQuantity(cleanNumber(e.target.value))} /></label></div><label>預估實退比例 (%)<input inputMode="decimal" value={refundRate} onChange={(e) => setRefundRate(cleanNumber(e.target.value))} /></label></div>
+    <div className="refund-card"><div className="refund-total"><div><small>商品總額</small><strong>₩ {moneyFormat.format(totalKrw)}</strong><span>約 NT$ {moneyFormat.format(totalKrw / rate)}</span></div><div><small>預估退稅</small><strong className="refund-green">− ₩ {moneyFormat.format(estimatedRefund)}</strong><span>{refundRate}% 試算</span></div></div><div className="after-refund"><span>退稅後約付</span><div><strong>₩ {moneyFormat.format(afterRefund)}</strong><small>NT$ {moneyFormat.format(afterRefund / rate)}</small></div></div></div>
+    <div className="shop-actions"><button onClick={() => { const product = productFromForm(); if (product) { onSave(product); setName('') } }} disabled={!name.trim()}><Heart size={16} />收藏商品</button><button className="accent" onClick={() => { const product = productFromForm(); if (product) onExpense(product) }} disabled={!name.trim()}><Plus size={16} />加入花費</button></div>
+    <p className="helper-text tax-note">退稅額會因商品、退稅業者與手續費而異。App 預設以售價 7% 估算，可依退稅單自行調整；這不是保證退稅金額。</p>
+    <div className="section-title"><h3>收藏商品</h3><span>{products.length} 項</span></div>
+    {products.length === 0 ? <EmptyState icon={<Heart />} title="還沒有收藏商品" text="輸入商品名稱與價格，旅行中就能快速比較。" /> : <div className="product-list">{products.map((product) => { const total = product.priceKrw * product.quantity; return <div className="product-item" key={product.id}><span className="product-icon"><ShoppingBag size={17} /></span><div><strong>{product.name}</strong><small>₩{moneyFormat.format(product.priceKrw)} × {product.quantity} · 退稅 {product.refundRate}%</small></div><div className="product-price"><strong>NT$ {moneyFormat.format((total * (1 - product.refundRate / 100)) / rate)}</strong><span><button onClick={() => onExpense(product)} aria-label={`將 ${product.name} 加入花費`}><Plus size={14} /></button><button onClick={() => onDelete(product.id)} aria-label={`刪除 ${product.name}`}><Trash2 size={13} /></button></span></div></div> })}</div>}
   </section>
 }
 

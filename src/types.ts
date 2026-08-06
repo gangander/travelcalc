@@ -40,3 +40,12 @@ export type CardSettings = {
   feePercent: number
   rewardPercent: number
 }
+
+export type SavedProduct = {
+  id: string
+  name: string
+  priceKrw: number
+  quantity: number
+  refundRate: number
+  createdAt: string
+}
