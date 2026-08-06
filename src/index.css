@@ -94,6 +94,12 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .form-card input, .form-card select { width: 100%; height: 40px; color: #e8f0f3; background: rgba(0,0,0,.19); border: 1px solid rgba(255,255,255,.08); border-radius: 11px; padding: 0 11px; outline: 0; font-size: 12px; }
 .form-card input:focus, .form-card select:focus { border-color: rgba(157,225,220,.38); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.card-condition { display: flex; align-items: flex-start; gap: 10px; margin-top: 10px; padding: 12px; border-radius: 16px; background: rgba(130,181,201,.06); border: 1px solid rgba(130,181,201,.11); }
+.card-condition > svg { flex-shrink: 0; margin-top: 2px; color: #83c5d2; }
+.card-condition > div { display: flex; flex-direction: column; }
+.card-condition strong { font-size: 10px; }
+.card-condition p { margin: 4px 0 6px; color: #788e99; font-size: 8px; line-height: 1.55; }
+.card-condition a { color: #8dd5d2; font-size: 8px; text-decoration: none; }
 .calc-card { margin-top: 12px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); border-radius: 20px; padding: 15px; }
 .calc-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,.07); padding-bottom: 12px; margin-bottom: 9px; }
 .calc-header > div { display: flex; flex-direction: column; }

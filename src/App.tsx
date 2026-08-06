@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  ArrowDownUp, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, CreditCard, Heart,
+  ArrowDownUp, CalendarDays, Check, CircleDollarSign, Clock3, CreditCard, Heart,
   History, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, Settings2, ShoppingBag, Sparkles, Trash2, WalletCards, X,
 } from 'lucide-react'
 import { cachedRate, fetchTwdKrwRate, saveManualRate } from './rate-service'
@@ -15,7 +15,13 @@ const TWD: Currency = { code: 'TWD', symbol: 'NT$', flag: '🇹🇼', name: '新
 const KRW: Currency = { code: 'KRW', symbol: '₩', flag: '🇰🇷', name: '韓元' }
 const DEFAULT_RATE: ExchangeRate = { rate: 45.32, date: '', fetchedAt: '', source: 'cached' }
 const DEFAULT_TRIP: Trip = { id: 'seoul', name: '首爾自由行', destination: '首爾', startDate: new Date().toISOString().slice(0, 10), expenses: [] }
-const DEFAULT_CARD: CardSettings = { name: '旅行信用卡', feePercent: 1.5, rewardPercent: 3 }
+const CARD_PRESETS: CardSettings[] = [
+  { presetId: 'cube-l2', name: '國泰 CUBE｜趣旅行 Level 2', feePercent: 1.5, rewardPercent: 3, note: '需切換「趣旅行」；Level 2 須以本人國泰帳戶繳卡費或設定自動扣繳。Level 1 為 2%、Level 3 為 3.3%。', officialUrl: 'https://www.cathaybk.com.tw/cathaybk/promo/event/credit-card/product/CUBE_rights/index.html', verifiedAt: '2026-08-06' },
+  { presetId: 'richart-travel', name: '台新 Richart｜玩旅刷', feePercent: 1.5, rewardPercent: 3.3, note: '需在 Richart Life App 切換「玩旅刷」，並設定 Richart／台新帳戶自動扣繳，適用海外實體與線上消費。', officialUrl: 'https://richart.tw/TSDIB_RichartWeb/card/credit-card', verifiedAt: '2026-08-06' },
+  { presetId: 'unicard-base', name: '玉山 Unicard｜一般消費', feePercent: 1.5, rewardPercent: 1, note: '以一般消費最高 1% 試算；需帳單 e 化與指定條件。日韓滿額登錄加碼活動未計入，以免高估。', officialUrl: 'https://event.esunbank.com.tw/credit/unicard/index.html', verifiedAt: '2026-08-06' },
+  { presetId: 'custom', name: '自訂信用卡', feePercent: 1.5, rewardPercent: 2, note: '自行輸入銀行公告的海外回饋與手續費。' },
+]
+const DEFAULT_CARD: CardSettings = CARD_PRESETS[0]
 const numberFormat = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 })
 const moneyFormat = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 })
 const cleanNumber = (value: string) => value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
@@ -41,8 +47,6 @@ function App() {
   const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0]
   const numericAmount = Number(amount) || 0
   const converted = from.code === 'TWD' ? numericAmount * rate.rate : numericAmount / rate.rate
-  const today = new Date().toISOString().slice(0, 10)
-  const todaySpent = activeTrip?.expenses.filter((expense) => expense.createdAt.slice(0, 10) === today).reduce((sum, expense) => sum + expense.twdAmount, 0) ?? 0
   const cardBaseTwd = from.code === 'TWD' ? numericAmount : converted
   const cardFee = cardBaseTwd * card.feePercent / 100
   const cardReward = cardBaseTwd * card.rewardPercent / 100
@@ -117,7 +121,7 @@ function App() {
           <button className="icon-button" onClick={() => setSheet('settings')} aria-label="開啟設定"><MoreHorizontal size={22} /></button>
         </header>
 
-        {tab === 'convert' && <ConvertView from={from} to={to} amount={amount} converted={converted} rate={rate} loading={rateLoading} error={rateError} todaySpent={todaySpent} trip={activeTrip} onAmount={setAmount} onSwap={swap} onRefresh={refreshRate} onSettings={() => { setRateDraft(String(rate.rate)); setSheet('settings') }} onRecord={saveConversion} onWallet={() => setTab('wallet')} onHistory={() => setSheet('history')} onExpense={() => setSheet('expense')} onTrip={() => setTab('trips')} />}
+        {tab === 'convert' && <ConvertView from={from} to={to} amount={amount} converted={converted} rate={rate} loading={rateLoading} error={rateError} onAmount={setAmount} onSwap={swap} onRefresh={refreshRate} onSettings={() => { setRateDraft(String(rate.rate)); setSheet('settings') }} onRecord={saveConversion} onShop={() => setTab('shop')} onWallet={() => setTab('wallet')} onHistory={() => setSheet('history')} />}
         {tab === 'shop' && <ShoppingView rate={rate.rate} products={products} onSave={(product) => { setProducts((current) => [product, ...current]); setToast('商品已收藏') }} onDelete={(id) => setProducts((current) => current.filter((product) => product.id !== id))} onExpense={(product) => { if (!activeTrip) return setToast('請先建立旅程'); const total = product.priceKrw * product.quantity; const expense: Expense = { id: newId(), title: product.name, amount: total, currency: 'KRW', twdAmount: total / rate.rate, category: '購物', createdAt: new Date().toISOString() }; setTrips((current) => current.map((trip) => trip.id === activeTrip.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setToast('已加入旅程花費') }} />}
         {tab === 'trips' && <TripsView trips={trips} activeTripId={activeTripId} rate={rate.rate} onSelect={setActiveTripId} onAdd={() => setSheet('trip')} onExpense={() => setSheet('expense')} />}
         {tab === 'wallet' && <WalletView card={card} setCard={setCard} base={cardBaseTwd} fee={cardFee} reward={cardReward} net={cardNet} amount={numericAmount} from={from} />}
@@ -141,7 +145,7 @@ function App() {
   )
 }
 
-type ConvertProps = { from: Currency; to: Currency; amount: string; converted: number; rate: ExchangeRate; loading: boolean; error: string; todaySpent: number; trip?: Trip; onAmount: (v: string) => void; onSwap: () => void; onRefresh: () => void; onSettings: () => void; onRecord: () => void; onWallet: () => void; onHistory: () => void; onExpense: () => void; onTrip: () => void }
+type ConvertProps = { from: Currency; to: Currency; amount: string; converted: number; rate: ExchangeRate; loading: boolean; error: string; onAmount: (v: string) => void; onSwap: () => void; onRefresh: () => void; onSettings: () => void; onRecord: () => void; onShop: () => void; onWallet: () => void; onHistory: () => void }
 function ConvertView(props: ConvertProps) {
   const sourceLabel = props.rate.source === 'live' ? '即時參考匯率' : props.rate.source === 'manual' ? '手動匯率' : '上次匯率'
   return <>
@@ -154,11 +158,10 @@ function ConvertView(props: ConvertProps) {
       <div className="rate-meta"><span>{props.error || (props.rate.date ? `資料日期 ${props.rate.date}` : '準備更新匯率')}</span></div>
     </section>
     <section className="quick-actions">
-      <button onClick={props.onExpense}><span className="action-icon coral"><Plus size={22} /></span><strong>記一筆</strong><small>新增旅費</small></button>
+      <button onClick={props.onShop}><span className="action-icon coral"><ShoppingBag size={21} /></span><strong>購物試算</strong><small>退稅・收藏</small></button>
       <button onClick={props.onWallet}><span className="action-icon blue"><CreditCard size={21} /></span><strong>卡片試算</strong><small>回饋・手續費</small></button>
       <button onClick={props.onHistory}><span className="action-icon violet"><History size={21} /></span><strong>換算紀錄</strong><small>最近使用</small></button>
     </section>
-    <button className="trip-card" onClick={props.onTrip}><div className="trip-icon">🇰🇷</div><div><small>這趟旅行</small><strong>{props.trip?.name ?? '建立新旅程'}</strong></div><div className="trip-total"><small>今日花費</small><strong>NT$ {moneyFormat.format(props.todaySpent)}</strong></div><ChevronRight size={18} /></button>
     <button className="primary-action" onClick={props.onRecord}><History size={16} />儲存這次換算</button>
   </>
 }
@@ -207,9 +210,10 @@ function ShoppingView({ rate, products, onSave, onDelete, onExpense }: { rate: n
 function WalletView({ card, setCard, base, fee, reward, net, amount, from }: { card: CardSettings; setCard: (card: CardSettings) => void; base: number; fee: number; reward: number; net: number; amount: number; from: Currency }) {
   return <section className="page-view"><div className="page-heading"><div><p>聰明刷卡</p><h2>錢包試算</h2></div><span className="wallet-badge"><CreditCard size={18} /></span></div>
     <div className="credit-card"><div className="card-top"><span>TRAVEL CARD</span><span>✦</span></div><strong>{card.name}</strong><div className="card-bottom"><span>海外回饋 {card.rewardPercent}%</span><span>•••• 2026</span></div></div>
-    <div className="form-card"><label>卡片名稱<input value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value })} /></label><div className="form-grid"><label>海外手續費 (%)<input inputMode="decimal" value={card.feePercent} onChange={(e) => setCard({ ...card, feePercent: Number(cleanNumber(e.target.value)) })} /></label><label>現金回饋 (%)<input inputMode="decimal" value={card.rewardPercent} onChange={(e) => setCard({ ...card, rewardPercent: Number(cleanNumber(e.target.value)) })} /></label></div></div>
+    <div className="form-card"><label>選擇常用卡片<select value={card.presetId ?? 'custom'} onChange={(e) => { const selected = CARD_PRESETS.find((preset) => preset.presetId === e.target.value); if (selected) setCard(selected) }}>{CARD_PRESETS.map((preset) => <option key={preset.presetId} value={preset.presetId}>{preset.name}</option>)}</select></label>{card.presetId === 'custom' && <label>卡片名稱<input value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value })} /></label>}<div className="form-grid"><label>海外手續費 (%)<input inputMode="decimal" value={card.feePercent} onChange={(e) => setCard({ ...card, presetId: 'custom', name: card.presetId === 'custom' ? card.name : `${card.name}（自訂）`, feePercent: Number(cleanNumber(e.target.value)) })} /></label><label>回饋試算 (%)<input inputMode="decimal" value={card.rewardPercent} onChange={(e) => setCard({ ...card, presetId: 'custom', name: card.presetId === 'custom' ? card.name : `${card.name}（自訂）`, rewardPercent: Number(cleanNumber(e.target.value)) })} /></label></div></div>
+    {card.note && <div className="card-condition"><Settings2 size={16} /><div><strong>套用條件</strong><p>{card.note}</p>{card.officialUrl && <a href={card.officialUrl} target="_blank" rel="noreferrer">查看銀行官方權益</a>}</div></div>}
     <div className="calc-card"><div className="calc-header"><div><small>本次消費</small><strong>{from.symbol} {numberFormat.format(amount)}</strong></div><CircleDollarSign /></div><div className="calc-line"><span>折合台幣</span><strong>NT$ {moneyFormat.format(base)}</strong></div><div className="calc-line fee"><span>海外手續費</span><strong>+ NT$ {moneyFormat.format(fee)}</strong></div><div className="calc-line reward"><span>預估回饋</span><strong>− NT$ {moneyFormat.format(reward)}</strong></div><div className="calc-total"><span>實際成本</span><strong>NT$ {moneyFormat.format(net)}</strong></div></div>
-    <p className="helper-text">試算結果僅供參考，實際入帳匯率與回饋依發卡銀行公告。</p>
+    <p className="helper-text">權益資料核對日：{card.verifiedAt ?? '自訂'}。試算不含登錄活動、回饋上限與排除項目，實際結果依銀行認列。</p>
   </section>
 }
 

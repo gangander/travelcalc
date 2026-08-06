@@ -39,6 +39,10 @@ export type CardSettings = {
   name: string
   feePercent: number
   rewardPercent: number
+  presetId?: string
+  note?: string
+  officialUrl?: string
+  verifiedAt?: string
 }
 
 export type SavedProduct = {
