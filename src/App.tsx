@@ -1,110 +1,212 @@
-import { useMemo, useState } from 'react'
-import { ArrowDownUp, ChevronRight, History, MoreHorizontal, Plane, Plus, Settings2, Sparkles, WalletCards } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  ArrowDownUp, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, CreditCard,
+  History, MoreHorizontal, Plane, Plus, RefreshCw, Settings2, Sparkles, Trash2, WalletCards, X,
+} from 'lucide-react'
+import { cachedRate, fetchTwdKrwRate, saveManualRate } from './rate-service'
+import { loadStored, saveStored } from './storage'
+import type { CardSettings, ConversionRecord, CurrencyCode, ExchangeRate, Expense, Trip } from './types'
 
-type Currency = {
-  code: 'TWD' | 'KRW'
-  symbol: string
-  flag: string
-  name: string
-}
+type Currency = { code: CurrencyCode; symbol: string; flag: string; name: string }
+type Tab = 'convert' | 'trips' | 'wallet'
+type Sheet = 'settings' | 'history' | 'expense' | 'trip' | null
 
 const TWD: Currency = { code: 'TWD', symbol: 'NT$', flag: '🇹🇼', name: '新台幣' }
 const KRW: Currency = { code: 'KRW', symbol: '₩', flag: '🇰🇷', name: '韓元' }
-
-const cleanNumber = (value: string) => value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+const DEFAULT_RATE: ExchangeRate = { rate: 45.32, date: '', fetchedAt: '', source: 'cached' }
+const DEFAULT_TRIP: Trip = { id: 'seoul', name: '首爾自由行', destination: '首爾', startDate: new Date().toISOString().slice(0, 10), expenses: [] }
+const DEFAULT_CARD: CardSettings = { name: '旅行信用卡', feePercent: 1.5, rewardPercent: 3 }
 const numberFormat = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 })
+const moneyFormat = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 })
+const cleanNumber = (value: string) => value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
 function App() {
+  const [tab, setTab] = useState<Tab>('convert')
+  const [sheet, setSheet] = useState<Sheet>(null)
   const [from, setFrom] = useState<Currency>(TWD)
   const [to, setTo] = useState<Currency>(KRW)
   const [amount, setAmount] = useState('1000')
-  const [rate, setRate] = useState('45.32')
-  const [editingRate, setEditingRate] = useState(false)
+  const [rate, setRate] = useState<ExchangeRate>(() => cachedRate() ?? DEFAULT_RATE)
+  const [rateDraft, setRateDraft] = useState(String(rate.rate))
+  const [rateLoading, setRateLoading] = useState(false)
+  const [rateError, setRateError] = useState('')
+  const [records, setRecords] = useState<ConversionRecord[]>(() => loadStored('travelcalc:records', []))
+  const [trips, setTrips] = useState<Trip[]>(() => loadStored('travelcalc:trips', [DEFAULT_TRIP]))
+  const [activeTripId, setActiveTripId] = useState(() => loadStored('travelcalc:activeTrip', 'seoul'))
+  const [card, setCard] = useState<CardSettings>(() => loadStored('travelcalc:card', DEFAULT_CARD))
+  const [toast, setToast] = useState('')
 
-  const converted = useMemo(() => {
-    const input = Number(amount) || 0
-    const exchangeRate = Number(rate) || 0
-    return from.code === 'TWD' ? input * exchangeRate : input / exchangeRate
-  }, [amount, from.code, rate])
+  const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0]
+  const numericAmount = Number(amount) || 0
+  const converted = from.code === 'TWD' ? numericAmount * rate.rate : numericAmount / rate.rate
+  const today = new Date().toISOString().slice(0, 10)
+  const todaySpent = activeTrip?.expenses.filter((expense) => expense.createdAt.slice(0, 10) === today).reduce((sum, expense) => sum + expense.twdAmount, 0) ?? 0
+  const cardBaseTwd = from.code === 'TWD' ? numericAmount : converted
+  const cardFee = cardBaseTwd * card.feePercent / 100
+  const cardReward = cardBaseTwd * card.rewardPercent / 100
+  const cardNet = cardBaseTwd + cardFee - cardReward
 
-  const swap = () => {
+  useEffect(() => { saveStored('travelcalc:records', records) }, [records])
+  useEffect(() => { saveStored('travelcalc:trips', trips) }, [trips])
+  useEffect(() => { saveStored('travelcalc:activeTrip', activeTripId) }, [activeTripId])
+  useEffect(() => { saveStored('travelcalc:card', card) }, [card])
+  useEffect(() => { void refreshRate() }, [])
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(''), 2200)
+    return () => window.clearTimeout(timer)
+  }, [toast])
+
+  async function refreshRate() {
+    setRateLoading(true)
+    setRateError('')
+    try {
+      const latest = await fetchTwdKrwRate()
+      setRate(latest)
+      setRateDraft(String(latest.rate))
+    } catch {
+      const cached = cachedRate()
+      if (cached) setRate(cached)
+      setRateError(cached ? '目前離線，使用上次匯率' : '無法更新，可改用手動匯率')
+    } finally {
+      setRateLoading(false)
+    }
+  }
+
+  function swap() {
     setFrom(to)
     setTo(from)
     setAmount(converted ? String(Number(converted.toFixed(2))) : '')
   }
 
+  function saveConversion() {
+    if (!numericAmount) return setToast('請先輸入金額')
+    const record: ConversionRecord = { id: newId(), from: from.code, to: to.code, amount: numericAmount, result: converted, rate: rate.rate, createdAt: new Date().toISOString() }
+    setRecords((current) => [record, ...current].slice(0, 50))
+    setToast('已加入換算紀錄')
+  }
+
+  function applyManualRate() {
+    const value = Number(rateDraft)
+    if (!value || value <= 0) return setToast('請輸入有效匯率')
+    setRate(saveManualRate(value))
+    setRateError('')
+    setSheet(null)
+    setToast('已使用手動匯率')
+  }
+
+  function clearAllData() {
+    setRecords([])
+    setTrips([DEFAULT_TRIP])
+    setActiveTripId(DEFAULT_TRIP.id)
+    setCard(DEFAULT_CARD)
+    setSheet(null)
+    setToast('已清除旅行資料')
+  }
+
   return (
     <main className="app-shell">
-      <div className="ambient ambient-one" />
-      <div className="ambient ambient-two" />
-
+      <div className="ambient ambient-one" /><div className="ambient ambient-two" />
       <section className="phone-frame">
         <header className="topbar">
-          <div>
-            <p className="eyebrow"><Plane size={13} strokeWidth={2.4} /> Seoul trip</p>
-            <h1>TravelCalc</h1>
-          </div>
-          <button className="icon-button" aria-label="更多選項"><MoreHorizontal size={22} /></button>
+          <div><p className="eyebrow"><Plane size={13} /> {activeTrip?.destination ?? 'Travel mode'}</p><h1>TravelCalc</h1></div>
+          <button className="icon-button" onClick={() => setSheet('settings')} aria-label="開啟設定"><MoreHorizontal size={22} /></button>
         </header>
 
-        <section className="hero-copy">
-          <p>早安，旅人</p>
-          <h2>今天想換算<br /><span>多少旅費？</span></h2>
-        </section>
-
-        <section className="converter-card" aria-label="貨幣換算器">
-          <div className="currency-row">
-            <div className="currency-label">
-              <span className="flag">{from.flag}</span>
-              <div><small>支付</small><strong>{from.name}</strong></div>
-            </div>
-            <div className="amount-field">
-              <span>{from.symbol}</span>
-              <input aria-label={`${from.name}金額`} inputMode="decimal" value={amount} onChange={(event) => setAmount(cleanNumber(event.target.value))} />
-            </div>
-          </div>
-
-          <div className="divider"><button onClick={swap} aria-label="交換貨幣"><ArrowDownUp size={18} /></button></div>
-
-          <div className="currency-row result-row">
-            <div className="currency-label">
-              <span className="flag">{to.flag}</span>
-              <div><small>可換得</small><strong>{to.name}</strong></div>
-            </div>
-            <div className="amount-field result"><span>{to.symbol}</span><output>{numberFormat.format(converted)}</output></div>
-          </div>
-
-          <div className="rate-bar">
-            <div><Sparkles size={14} /><span>1 TWD =</span>
-              {editingRate ? (
-                <input autoFocus aria-label="自訂匯率" inputMode="decimal" value={rate} onChange={(e) => setRate(cleanNumber(e.target.value))} onBlur={() => setEditingRate(false)} onKeyDown={(e) => e.key === 'Enter' && setEditingRate(false)} />
-              ) : <strong>{rate} KRW</strong>}
-            </div>
-            <button onClick={() => setEditingRate(true)}><Settings2 size={14} /> 自訂</button>
-          </div>
-        </section>
-
-        <section className="quick-actions">
-          <button><span className="action-icon coral"><Plus size={22} /></span><strong>記一筆</strong><small>新增旅費</small></button>
-          <button><span className="action-icon blue"><WalletCards size={21} /></span><strong>卡片試算</strong><small>回饋・手續費</small></button>
-          <button><span className="action-icon violet"><History size={21} /></span><strong>換算紀錄</strong><small>最近使用</small></button>
-        </section>
-
-        <section className="trip-card">
-          <div className="trip-icon">🇰🇷</div>
-          <div><small>這趟旅行</small><strong>首爾 · Day 3</strong></div>
-          <div className="trip-total"><small>今日花費</small><strong>NT$ 2,840</strong></div>
-          <ChevronRight size={18} />
-        </section>
+        {tab === 'convert' && <ConvertView from={from} to={to} amount={amount} converted={converted} rate={rate} loading={rateLoading} error={rateError} todaySpent={todaySpent} trip={activeTrip} onAmount={setAmount} onSwap={swap} onRefresh={refreshRate} onSettings={() => { setRateDraft(String(rate.rate)); setSheet('settings') }} onRecord={saveConversion} onWallet={() => setTab('wallet')} onHistory={() => setSheet('history')} onExpense={() => setSheet('expense')} onTrip={() => setTab('trips')} />}
+        {tab === 'trips' && <TripsView trips={trips} activeTripId={activeTripId} rate={rate.rate} onSelect={setActiveTripId} onAdd={() => setSheet('trip')} onExpense={() => setSheet('expense')} />}
+        {tab === 'wallet' && <WalletView card={card} setCard={setCard} base={cardBaseTwd} fee={cardFee} reward={cardReward} net={cardNet} amount={numericAmount} from={from} />}
 
         <nav className="bottom-nav" aria-label="主要導覽">
-          <button className="active"><span>⌁</span>換算</button>
-          <button><span>◎</span>旅程</button>
-          <button><span>◇</span>錢包</button>
+          <button className={tab === 'convert' ? 'active' : ''} onClick={() => setTab('convert')}><ArrowDownUp size={19} />換算</button>
+          <button className={tab === 'trips' ? 'active' : ''} onClick={() => setTab('trips')}><Plane size={19} />旅程</button>
+          <button className={tab === 'wallet' ? 'active' : ''} onClick={() => setTab('wallet')}><WalletCards size={19} />錢包</button>
         </nav>
+
+        {sheet && <Sheet title={sheetTitle(sheet)} onClose={() => setSheet(null)}>
+          {sheet === 'settings' && <Settings rate={rate} rateDraft={rateDraft} setRateDraft={setRateDraft} onManual={applyManualRate} onRefresh={refreshRate} onClear={clearAllData} loading={rateLoading} />}
+          {sheet === 'history' && <HistoryList records={records} onClear={() => setRecords([])} />}
+          {sheet === 'expense' && <ExpenseForm trip={activeTrip} rate={rate.rate} onSave={(expense) => { setTrips((current) => current.map((trip) => trip.id === activeTrip?.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setSheet(null); setToast('花費已記錄') }} />}
+          {sheet === 'trip' && <TripForm onSave={(trip) => { setTrips((current) => [...current, trip]); setActiveTripId(trip.id); setSheet(null); setToast('新旅程建立完成') }} />}
+        </Sheet>}
+        {toast && <div className="toast"><Check size={16} />{toast}</div>}
       </section>
     </main>
   )
 }
+
+type ConvertProps = { from: Currency; to: Currency; amount: string; converted: number; rate: ExchangeRate; loading: boolean; error: string; todaySpent: number; trip?: Trip; onAmount: (v: string) => void; onSwap: () => void; onRefresh: () => void; onSettings: () => void; onRecord: () => void; onWallet: () => void; onHistory: () => void; onExpense: () => void; onTrip: () => void }
+function ConvertView(props: ConvertProps) {
+  const sourceLabel = props.rate.source === 'live' ? '即時參考匯率' : props.rate.source === 'manual' ? '手動匯率' : '上次匯率'
+  return <>
+    <section className="hero-copy"><p>早安，旅人</p><h2>今天想換算<br /><span>多少旅費？</span></h2></section>
+    <section className="converter-card" aria-label="貨幣換算器">
+      <CurrencyRow currency={props.from} label="支付" value={props.amount} editable onChange={props.onAmount} />
+      <div className="divider"><button onClick={props.onSwap} aria-label="交換貨幣"><ArrowDownUp size={18} /></button></div>
+      <CurrencyRow currency={props.to} label="可換得" value={numberFormat.format(props.converted)} />
+      <div className="rate-bar"><div><Sparkles size={14} /><span>{sourceLabel}</span><strong>1 TWD = {props.rate.rate} KRW</strong></div><button onClick={props.onRefresh} disabled={props.loading} aria-label="更新匯率"><RefreshCw size={14} className={props.loading ? 'spin' : ''} /></button><button onClick={props.onSettings}><Settings2 size={14} /> 自訂</button></div>
+      <div className="rate-meta"><span>{props.error || (props.rate.date ? `資料日期 ${props.rate.date}` : '準備更新匯率')}</span></div>
+    </section>
+    <section className="quick-actions">
+      <button onClick={props.onExpense}><span className="action-icon coral"><Plus size={22} /></span><strong>記一筆</strong><small>新增旅費</small></button>
+      <button onClick={props.onWallet}><span className="action-icon blue"><CreditCard size={21} /></span><strong>卡片試算</strong><small>回饋・手續費</small></button>
+      <button onClick={props.onHistory}><span className="action-icon violet"><History size={21} /></span><strong>換算紀錄</strong><small>最近使用</small></button>
+    </section>
+    <button className="trip-card" onClick={props.onTrip}><div className="trip-icon">🇰🇷</div><div><small>這趟旅行</small><strong>{props.trip?.name ?? '建立新旅程'}</strong></div><div className="trip-total"><small>今日花費</small><strong>NT$ {moneyFormat.format(props.todaySpent)}</strong></div><ChevronRight size={18} /></button>
+    <button className="primary-action" onClick={props.onRecord}><History size={16} />儲存這次換算</button>
+  </>
+}
+
+function CurrencyRow({ currency, label, value, editable, onChange }: { currency: Currency; label: string; value: string; editable?: boolean; onChange?: (v: string) => void }) {
+  return <div className={`currency-row ${editable ? '' : 'result-row'}`}><div className="currency-label"><span className="flag">{currency.flag}</span><div><small>{label}</small><strong>{currency.name}</strong></div></div><div className={`amount-field ${editable ? '' : 'result'}`}><span>{currency.symbol}</span>{editable ? <input aria-label={`${currency.name}金額`} inputMode="decimal" value={value} onChange={(e) => onChange?.(cleanNumber(e.target.value))} /> : <output>{value}</output>}</div></div>
+}
+
+function TripsView({ trips, activeTripId, rate, onSelect, onAdd, onExpense }: { trips: Trip[]; activeTripId: string; rate: number; onSelect: (id: string) => void; onAdd: () => void; onExpense: () => void }) {
+  return <section className="page-view"><div className="page-heading"><div><p>旅行帳本</p><h2>我的旅程</h2></div><button className="round-add" onClick={onAdd} aria-label="新增旅程"><Plus /></button></div>
+    <div className="summary-card"><Plane size={22} /><div><small>所有旅程總花費</small><strong>NT$ {moneyFormat.format(trips.flatMap((trip) => trip.expenses).reduce((sum, expense) => sum + expense.twdAmount, 0))}</strong></div><span>{trips.length} 趟</span></div>
+    <div className="section-title"><h3>旅程列表</h3><button onClick={onAdd}>新增</button></div>
+    <div className="trip-list">{trips.map((trip) => { const total = trip.expenses.reduce((sum, expense) => sum + expense.twdAmount, 0); return <button key={trip.id} className={`trip-list-item ${trip.id === activeTripId ? 'selected' : ''}`} onClick={() => onSelect(trip.id)}><span className="destination-icon">🇰🇷</span><div><strong>{trip.name}</strong><small><CalendarDays size={11} /> {trip.startDate} · {trip.expenses.length} 筆</small></div><div className="list-amount"><strong>NT$ {moneyFormat.format(total)}</strong><small>約 ₩{moneyFormat.format(total * rate)}</small></div>{trip.id === activeTripId && <Check size={15} />}</button> })}</div>
+    <button className="primary-action" onClick={onExpense}><Plus size={17} />新增目前旅程花費</button>
+  </section>
+}
+
+function WalletView({ card, setCard, base, fee, reward, net, amount, from }: { card: CardSettings; setCard: (card: CardSettings) => void; base: number; fee: number; reward: number; net: number; amount: number; from: Currency }) {
+  return <section className="page-view"><div className="page-heading"><div><p>聰明刷卡</p><h2>錢包試算</h2></div><span className="wallet-badge"><CreditCard size={18} /></span></div>
+    <div className="credit-card"><div className="card-top"><span>TRAVEL CARD</span><span>✦</span></div><strong>{card.name}</strong><div className="card-bottom"><span>海外回饋 {card.rewardPercent}%</span><span>•••• 2026</span></div></div>
+    <div className="form-card"><label>卡片名稱<input value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value })} /></label><div className="form-grid"><label>海外手續費 (%)<input inputMode="decimal" value={card.feePercent} onChange={(e) => setCard({ ...card, feePercent: Number(cleanNumber(e.target.value)) })} /></label><label>現金回饋 (%)<input inputMode="decimal" value={card.rewardPercent} onChange={(e) => setCard({ ...card, rewardPercent: Number(cleanNumber(e.target.value)) })} /></label></div></div>
+    <div className="calc-card"><div className="calc-header"><div><small>本次消費</small><strong>{from.symbol} {numberFormat.format(amount)}</strong></div><CircleDollarSign /></div><div className="calc-line"><span>折合台幣</span><strong>NT$ {moneyFormat.format(base)}</strong></div><div className="calc-line fee"><span>海外手續費</span><strong>+ NT$ {moneyFormat.format(fee)}</strong></div><div className="calc-line reward"><span>預估回饋</span><strong>− NT$ {moneyFormat.format(reward)}</strong></div><div className="calc-total"><span>實際成本</span><strong>NT$ {moneyFormat.format(net)}</strong></div></div>
+    <p className="helper-text">試算結果僅供參考，實際入帳匯率與回饋依發卡銀行公告。</p>
+  </section>
+}
+
+function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><section className="sheet"><div className="sheet-handle" /><header><h2>{title}</h2><button onClick={onClose} aria-label="關閉"><X size={20} /></button></header>{children}</section></div> }
+function sheetTitle(sheet: Exclude<Sheet, null>) { return { settings: '匯率與設定', history: '換算紀錄', expense: '新增旅費', trip: '建立旅程' }[sheet] }
+
+function Settings({ rate, rateDraft, setRateDraft, onManual, onRefresh, onClear, loading }: { rate: ExchangeRate; rateDraft: string; setRateDraft: (v: string) => void; onManual: () => void; onRefresh: () => void; onClear: () => void; loading: boolean }) {
+  return <div className="sheet-content"><div className="setting-status"><span className={`status-dot ${rate.source}`} /><div><strong>{rate.source === 'live' ? '已連線自動匯率' : rate.source === 'manual' ? '目前使用手動匯率' : '目前使用快取匯率'}</strong><small>Frankfurter 官方參考匯率 · {rate.date || '尚未更新'}</small></div><button onClick={onRefresh} disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button></div><div className="form-card"><label>手動設定 1 TWD 可換多少 KRW<div className="inline-input"><input inputMode="decimal" value={rateDraft} onChange={(e) => setRateDraft(cleanNumber(e.target.value))} /><button onClick={onManual}>套用</button></div></label></div><p className="helper-text">有網路時會自動更新；更新失敗會保留上次成功匯率。銀行現鈔或信用卡入帳匯率可能不同。</p><button className="danger-button" onClick={onClear}><Trash2 size={16} />清除所有旅行資料</button></div>
+}
+
+function HistoryList({ records, onClear }: { records: ConversionRecord[]; onClear: () => void }) {
+  return <div className="sheet-content">{records.length === 0 ? <EmptyState icon={<History />} title="還沒有換算紀錄" text="回到首頁儲存一次換算，就會出現在這裡。" /> : <><div className="history-list">{records.map((record) => <div className="history-item" key={record.id}><span className="history-icon"><ArrowDownUp size={16} /></span><div><strong>{record.from === 'TWD' ? 'NT$' : '₩'} {numberFormat.format(record.amount)}</strong><small><Clock3 size={11} /> {new Date(record.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small></div><div><strong>{record.to === 'KRW' ? '₩' : 'NT$'} {numberFormat.format(record.result)}</strong><small>匯率 {record.rate}</small></div></div>)}</div><button className="danger-button" onClick={onClear}><Trash2 size={16} />清除換算紀錄</button></>}</div>
+}
+
+function ExpenseForm({ trip, rate, onSave }: { trip?: Trip; rate: number; onSave: (expense: Expense) => void }) {
+  const [title, setTitle] = useState('')
+  const [amount, setAmount] = useState('')
+  const [currency, setCurrency] = useState<CurrencyCode>('KRW')
+  const [category, setCategory] = useState('餐飲')
+  const valid = title.trim() && Number(amount) > 0 && trip
+  return <div className="sheet-content"><div className="current-trip"><Plane size={18} /><div><small>加入旅程</small><strong>{trip?.name ?? '尚未建立旅程'}</strong></div></div><div className="form-card"><label>項目名稱<input autoFocus placeholder="例如：廣藏市場午餐" value={title} onChange={(e) => setTitle(e.target.value)} /></label><div className="form-grid"><label>金額<input inputMode="decimal" placeholder="0" value={amount} onChange={(e) => setAmount(cleanNumber(e.target.value))} /></label><label>幣別<select value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}><option value="KRW">韓元 KRW</option><option value="TWD">台幣 TWD</option></select></label></div><label>分類<select value={category} onChange={(e) => setCategory(e.target.value)}>{['餐飲', '購物', '交通', '住宿', '景點', '其他'].map((item) => <option key={item}>{item}</option>)}</select></label></div><div className="expense-preview"><span>折合約</span><strong>NT$ {moneyFormat.format(currency === 'TWD' ? Number(amount) : Number(amount) / rate)}</strong></div><button className="primary-action" disabled={!valid} onClick={() => valid && onSave({ id: newId(), title: title.trim(), amount: Number(amount), currency, twdAmount: currency === 'TWD' ? Number(amount) : Number(amount) / rate, category, createdAt: new Date().toISOString() })}><Plus size={17} />儲存這筆花費</button></div>
+}
+
+function TripForm({ onSave }: { onSave: (trip: Trip) => void }) {
+  const [name, setName] = useState('')
+  const [destination, setDestination] = useState('首爾')
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  return <div className="sheet-content"><div className="form-card"><label>旅程名稱<input autoFocus placeholder="例如：2026 首爾自由行" value={name} onChange={(e) => setName(e.target.value)} /></label><label>目的地<input value={destination} onChange={(e) => setDestination(e.target.value)} /></label><label>出發日期<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label></div><button className="primary-action" disabled={!name.trim() || !destination.trim()} onClick={() => onSave({ id: newId(), name: name.trim(), destination: destination.trim(), startDate: date, expenses: [] })}><Plane size={17} />建立新旅程</button></div>
+}
+
+function EmptyState({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="empty-state"><span>{icon}</span><strong>{title}</strong><p>{text}</p></div> }
 
 export default App
