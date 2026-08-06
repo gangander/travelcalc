@@ -221,10 +221,19 @@ function ShoppingView({ rate, products, onSave, onDelete, onExpense }: { rate: n
 }
 
 function WalletView({ card, setCard, base, fee, reward, net, amount, from }: { card: CardSettings; setCard: (card: CardSettings) => void; base: number; fee: number; reward: number; net: number; amount: number; from: Currency }) {
+  const recommendations = CARD_PRESETS
+    .filter((preset) => preset.presetId !== 'custom')
+    .map((preset) => ({ ...preset, benefit: base * (preset.rewardPercent - preset.feePercent) / 100 }))
+    .sort((a, b) => b.benefit - a.benefit)
+    .slice(0, 3)
+
   return <section className="page-view"><div className="page-heading"><div><p>聰明刷卡</p><h2>錢包試算</h2></div><span className="wallet-badge"><CreditCard size={18} /></span></div>
     <div className="credit-card"><div className="card-top"><span>TRAVEL CARD</span><span>✦</span></div><strong>{card.name}</strong><div className="card-bottom"><span>海外回饋 {card.rewardPercent}%</span><span>•••• 2026</span></div></div>
     <div className="form-card"><label>選擇常用卡片<select value={card.presetId ?? 'custom'} onChange={(e) => { const selected = CARD_PRESETS.find((preset) => preset.presetId === e.target.value); if (selected) setCard(selected) }}>{CARD_BANKS.map((bank) => <optgroup key={bank} label={bank}>{CARD_PRESETS.filter((preset) => (preset.bank ?? '其他') === bank).map((preset) => <option key={preset.presetId} value={preset.presetId}>{preset.name}</option>)}</optgroup>)}</select></label>{card.presetId === 'custom' && <label>卡片名稱<input value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value })} /></label>}<div className="form-grid"><label>海外手續費 (%)<input inputMode="decimal" value={card.feePercent} onChange={(e) => setCard({ ...card, presetId: 'custom', bank: '其他', name: card.presetId === 'custom' ? card.name : `${card.name}（自訂）`, feePercent: Number(cleanNumber(e.target.value)) })} /></label><label>回饋試算 (%)<input inputMode="decimal" value={card.rewardPercent} onChange={(e) => setCard({ ...card, presetId: 'custom', bank: '其他', name: card.presetId === 'custom' ? card.name : `${card.name}（自訂）`, rewardPercent: Number(cleanNumber(e.target.value)) })} /></label></div></div>
     {card.note && <div className="card-condition"><Settings2 size={16} /><div><strong>套用條件</strong><p>{card.note}</p>{card.officialUrl && <a href={card.officialUrl} target="_blank" rel="noreferrer">查看銀行官方權益</a>}</div></div>}
+    <div className="section-title card-ranking-title"><h3>韓國消費推薦</h3><span>依本次金額估算</span></div>
+    <div className="card-ranking">{recommendations.map((preset, index) => <button key={preset.presetId} className={preset.presetId === card.presetId ? 'selected' : ''} onClick={() => setCard(preset)}><span className="rank-number">{index + 1}</span><div><strong>{preset.bank}</strong><small>{preset.name}</small></div><span className={preset.benefit >= 0 ? 'positive' : ''}>{preset.benefit >= 0 ? '省' : '多付'} NT$ {moneyFormat.format(Math.abs(preset.benefit))}</span></button>)}</div>
+    <p className="helper-text ranking-note">排行以「回饋率－1.5% 海外手續費」估算，不代表所有交易都符合加碼；請點選卡片查看回饋上限與使用條件。</p>
     <div className="calc-card"><div className="calc-header"><div><small>本次消費</small><strong>{from.symbol} {numberFormat.format(amount)}</strong></div><CircleDollarSign /></div><div className="calc-line"><span>折合台幣</span><strong>NT$ {moneyFormat.format(base)}</strong></div><div className="calc-line fee"><span>海外手續費</span><strong>+ NT$ {moneyFormat.format(fee)}</strong></div><div className="calc-line reward"><span>預估回饋</span><strong>− NT$ {moneyFormat.format(reward)}</strong></div><div className="calc-total"><span>實際成本</span><strong>NT$ {moneyFormat.format(net)}</strong></div></div>
     <p className="helper-text">權益資料核對日：{card.verifiedAt ?? '自訂'}。試算不含登錄活動、回饋上限與排除項目，實際結果依銀行認列。</p>
   </section>

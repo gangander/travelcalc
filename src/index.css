@@ -100,6 +100,18 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .card-condition strong { font-size: 10px; }
 .card-condition p { margin: 4px 0 6px; color: #788e99; font-size: 8px; line-height: 1.55; }
 .card-condition a { color: #8dd5d2; font-size: 8px; text-decoration: none; }
+.card-ranking-title { margin-top: 18px; }
+.card-ranking-title span { color: #6d818c; font-size: 9px; }
+.card-ranking { display: flex; flex-direction: column; gap: 7px; }
+.card-ranking button { width: 100%; display: grid; grid-template-columns: 25px 1fr auto; align-items: center; gap: 9px; padding: 10px; color: #dce8eb; text-align: left; background: rgba(255,255,255,.025); border: 1px solid rgba(255,255,255,.065); border-radius: 14px; }
+.card-ranking button.selected { background: rgba(105,202,190,.09); border-color: rgba(122,220,207,.28); }
+.rank-number { display: grid; place-items: center; width: 24px; height: 24px; color: #8dd5d2; background: rgba(141,213,210,.1); border-radius: 8px; font-size: 10px; font-weight: 700; }
+.card-ranking button div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.card-ranking button strong { font-size: 9px; }
+.card-ranking button small { overflow: hidden; color: #708691; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.card-ranking button > span:last-child { color: #b58f91; font-size: 9px; font-weight: 650; }
+.card-ranking button > span.positive { color: #88d2b7; }
+.ranking-note { margin-top: 8px; }
 .calc-card { margin-top: 12px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); border-radius: 20px; padding: 15px; }
 .calc-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,.07); padding-bottom: 12px; margin-bottom: 9px; }
 .calc-header > div { display: flex; flex-direction: column; }
