@@ -112,6 +112,19 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .card-ranking button > span:last-child { color: #b58f91; font-size: 9px; font-weight: 650; }
 .card-ranking button > span.positive { color: #88d2b7; }
 .ranking-note { margin-top: 8px; }
+.payment-title { margin-top: 18px; }
+.payment-title span { color: #6d818c; font-size: 9px; }
+.payment-methods { display: flex; gap: 7px; overflow-x: auto; padding: 1px 1px 5px; scrollbar-width: none; }
+.payment-methods::-webkit-scrollbar { display: none; }
+.payment-methods button { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 9px 11px; color: #788e99; background: rgba(255,255,255,.025); border: 1px solid rgba(255,255,255,.07); border-radius: 12px; font-size: 9px; white-space: nowrap; }
+.payment-methods button.selected { color: #dce9e9; background: rgba(105,202,190,.1); border-color: rgba(122,220,207,.3); }
+.payment-advice { margin-top: 6px; padding: 12px; background: rgba(255,255,255,.025); border: 1px solid rgba(255,255,255,.065); border-radius: 15px; }
+.payment-advice.recommended { border-color: rgba(102,197,160,.18); }
+.payment-advice.conditional { border-color: rgba(222,184,102,.2); }
+.payment-advice.not-recommended { border-color: rgba(205,118,125,.18); }
+.payment-advice strong { color: #a9bdc4; font-size: 9px; }
+.payment-advice p { margin: 4px 0 5px; color: #71858f; font-size: 8px; line-height: 1.55; }
+.payment-advice a { color: #8dd5d2; font-size: 8px; text-decoration: none; }
 .calc-card { margin-top: 12px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); border-radius: 20px; padding: 15px; }
 .calc-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,.07); padding-bottom: 12px; margin-bottom: 9px; }
 .calc-header > div { display: flex; flex-direction: column; }

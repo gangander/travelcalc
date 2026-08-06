@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowDownUp, CalendarDays, Check, CircleDollarSign, Clock3, CreditCard, Heart,
-  History, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, Settings2, ShoppingBag, Sparkles, Trash2, WalletCards, X,
+  History, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, Settings2, ShoppingBag, Smartphone, Sparkles, Trash2, WalletCards, X,
 } from 'lucide-react'
 import { cachedRate, fetchTwdKrwRate, saveManualRate } from './rate-service'
 import { loadStored, saveStored } from './storage'
@@ -10,6 +10,8 @@ import type { CardSettings, ConversionRecord, CurrencyCode, ExchangeRate, Expens
 type Currency = { code: CurrencyCode; symbol: string; flag: string; name: string }
 type Tab = 'convert' | 'shop' | 'trips' | 'wallet'
 type Sheet = 'settings' | 'history' | 'expense' | 'trip' | null
+type PaymentMethodId = 'card' | 'apple-pay' | 'google-wallet' | 'samsung-wallet' | 'line-pay' | 'kakao-pay' | 'naver-pay'
+type PaymentMethod = { id: PaymentMethodId; name: string; status: 'recommended' | 'conditional' | 'not-recommended'; note: string; officialUrl?: string }
 
 const TWD: Currency = { code: 'TWD', symbol: 'NT$', flag: '🇹🇼', name: '新台幣' }
 const KRW: Currency = { code: 'KRW', symbol: '₩', flag: '🇰🇷', name: '韓元' }
@@ -30,6 +32,15 @@ const CARD_PRESETS: CardSettings[] = [
   { bank: '其他', presetId: 'custom', name: '其他／自訂卡片', feePercent: 1.5, rewardPercent: 2, note: '自行輸入銀行公告的海外回饋與手續費。' },
 ]
 const CARD_BANKS = [...new Set(CARD_PRESETS.map((card) => card.bank ?? '其他'))]
+const PAYMENT_METHODS: PaymentMethod[] = [
+  { id: 'card', name: '實體信用卡', status: 'recommended', note: '接受度通常最高，回饋與海外手續費直接依發卡銀行認列。' },
+  { id: 'apple-pay', name: 'Apple Pay', status: 'recommended', note: '韓國支援 Apple Pay 的感應商店可使用；通常保留綁定卡片的回饋與權益，仍以銀行認列為準。', officialUrl: 'https://support.apple.com/zh-tw/102775' },
+  { id: 'google-wallet', name: 'Google Wallet', status: 'recommended', note: '可在支援感應付款的商店使用，須確認手機、地區及綁定卡片受支援；回饋依銀行認列。', officialUrl: 'https://support.google.com/wallet/answer/12060037' },
+  { id: 'samsung-wallet', name: 'Samsung Wallet', status: 'recommended', note: '韓國列於官方支援地區；若綁定卡可在當地交易，通常可用 Samsung Wallet 感應付款。', officialUrl: 'https://www.samsung.com/tw/samsung-pay/' },
+  { id: 'line-pay', name: 'LINE Pay', status: 'conditional', note: '僅限接受 LINE Pay 的海外合作店，使用綁定信用卡付款；海外不能使用 LINE POINTS、優惠券或一卡通 MONEY。', officialUrl: 'https://help2.line.me/linepay_tw?contentId=50012192&country=TW' },
+  { id: 'kakao-pay', name: 'Kakao Pay', status: 'not-recommended', note: '韓國當地常見，但一般台灣旅客可能受韓國電話、帳戶或身分驗證限制，不建議當唯一付款方式。' },
+  { id: 'naver-pay', name: 'NAVER Pay', status: 'not-recommended', note: '韓國部分線上與實體通路常見，但海外旅客註冊與付款條件較多，建議只作備用。' },
+]
 const DEFAULT_CARD: CardSettings = CARD_PRESETS[0]
 const numberFormat = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 })
 const moneyFormat = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 })
@@ -54,6 +65,7 @@ function App() {
     if (!saved.presetId || saved.presetId === 'custom') return saved
     return CARD_PRESETS.find((preset) => preset.presetId === saved.presetId) ?? saved
   })
+  const [paymentMethodId, setPaymentMethodId] = useState<PaymentMethodId>(() => loadStored('travelcalc:paymentMethod', 'card'))
   const [products, setProducts] = useState<SavedProduct[]>(() => loadStored('travelcalc:products', []))
   const [toast, setToast] = useState('')
 
@@ -69,6 +81,7 @@ function App() {
   useEffect(() => { saveStored('travelcalc:trips', trips) }, [trips])
   useEffect(() => { saveStored('travelcalc:activeTrip', activeTripId) }, [activeTripId])
   useEffect(() => { saveStored('travelcalc:card', card) }, [card])
+  useEffect(() => { saveStored('travelcalc:paymentMethod', paymentMethodId) }, [paymentMethodId])
   useEffect(() => { saveStored('travelcalc:products', products) }, [products])
   useEffect(() => { void refreshRate() }, [])
   useEffect(() => {
@@ -137,7 +150,7 @@ function App() {
         {tab === 'convert' && <ConvertView from={from} to={to} amount={amount} converted={converted} rate={rate} loading={rateLoading} error={rateError} onAmount={setAmount} onSwap={swap} onRefresh={refreshRate} onSettings={() => { setRateDraft(String(rate.rate)); setSheet('settings') }} onRecord={saveConversion} onShop={() => setTab('shop')} onWallet={() => setTab('wallet')} onHistory={() => setSheet('history')} />}
         {tab === 'shop' && <ShoppingView rate={rate.rate} products={products} onSave={(product) => { setProducts((current) => [product, ...current]); setToast('商品已收藏') }} onDelete={(id) => setProducts((current) => current.filter((product) => product.id !== id))} onExpense={(product) => { if (!activeTrip) return setToast('請先建立旅程'); const total = product.priceKrw * product.quantity; const expense: Expense = { id: newId(), title: product.name, amount: total, currency: 'KRW', twdAmount: total / rate.rate, category: '購物', createdAt: new Date().toISOString() }; setTrips((current) => current.map((trip) => trip.id === activeTrip.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setToast('已加入旅程花費') }} />}
         {tab === 'trips' && <TripsView trips={trips} activeTripId={activeTripId} rate={rate.rate} onSelect={setActiveTripId} onAdd={() => setSheet('trip')} onExpense={() => setSheet('expense')} />}
-        {tab === 'wallet' && <WalletView card={card} setCard={setCard} base={cardBaseTwd} fee={cardFee} reward={cardReward} net={cardNet} amount={numericAmount} from={from} />}
+        {tab === 'wallet' && <WalletView card={card} setCard={setCard} paymentMethodId={paymentMethodId} setPaymentMethodId={setPaymentMethodId} base={cardBaseTwd} fee={cardFee} reward={cardReward} net={cardNet} amount={numericAmount} from={from} />}
 
         <nav className="bottom-nav" aria-label="主要導覽">
           <button className={tab === 'convert' ? 'active' : ''} onClick={() => setTab('convert')}><ArrowDownUp size={19} />換算</button>
@@ -220,7 +233,8 @@ function ShoppingView({ rate, products, onSave, onDelete, onExpense }: { rate: n
   </section>
 }
 
-function WalletView({ card, setCard, base, fee, reward, net, amount, from }: { card: CardSettings; setCard: (card: CardSettings) => void; base: number; fee: number; reward: number; net: number; amount: number; from: Currency }) {
+function WalletView({ card, setCard, paymentMethodId, setPaymentMethodId, base, fee, reward, net, amount, from }: { card: CardSettings; setCard: (card: CardSettings) => void; paymentMethodId: PaymentMethodId; setPaymentMethodId: (id: PaymentMethodId) => void; base: number; fee: number; reward: number; net: number; amount: number; from: Currency }) {
+  const paymentMethod = PAYMENT_METHODS.find((method) => method.id === paymentMethodId) ?? PAYMENT_METHODS[0]
   const recommendations = CARD_PRESETS
     .filter((preset) => preset.presetId !== 'custom')
     .map((preset) => ({ ...preset, benefit: base * (preset.rewardPercent - preset.feePercent) / 100 }))
@@ -231,6 +245,9 @@ function WalletView({ card, setCard, base, fee, reward, net, amount, from }: { c
     <div className="credit-card"><div className="card-top"><span>TRAVEL CARD</span><span>✦</span></div><strong>{card.name}</strong><div className="card-bottom"><span>海外回饋 {card.rewardPercent}%</span><span>•••• 2026</span></div></div>
     <div className="form-card"><label>選擇常用卡片<select value={card.presetId ?? 'custom'} onChange={(e) => { const selected = CARD_PRESETS.find((preset) => preset.presetId === e.target.value); if (selected) setCard(selected) }}>{CARD_BANKS.map((bank) => <optgroup key={bank} label={bank}>{CARD_PRESETS.filter((preset) => (preset.bank ?? '其他') === bank).map((preset) => <option key={preset.presetId} value={preset.presetId}>{preset.name}</option>)}</optgroup>)}</select></label>{card.presetId === 'custom' && <label>卡片名稱<input value={card.name} onChange={(e) => setCard({ ...card, name: e.target.value })} /></label>}<div className="form-grid"><label>海外手續費 (%)<input inputMode="decimal" value={card.feePercent} onChange={(e) => setCard({ ...card, presetId: 'custom', bank: '其他', name: card.presetId === 'custom' ? card.name : `${card.name}（自訂）`, feePercent: Number(cleanNumber(e.target.value)) })} /></label><label>回饋試算 (%)<input inputMode="decimal" value={card.rewardPercent} onChange={(e) => setCard({ ...card, presetId: 'custom', bank: '其他', name: card.presetId === 'custom' ? card.name : `${card.name}（自訂）`, rewardPercent: Number(cleanNumber(e.target.value)) })} /></label></div></div>
     {card.note && <div className="card-condition"><Settings2 size={16} /><div><strong>套用條件</strong><p>{card.note}</p>{card.officialUrl && <a href={card.officialUrl} target="_blank" rel="noreferrer">查看銀行官方權益</a>}</div></div>}
+    <div className="section-title payment-title"><h3>付款方式</h3><span>不另加固定回饋</span></div>
+    <div className="payment-methods">{PAYMENT_METHODS.map((method) => <button key={method.id} className={method.id === paymentMethod.id ? 'selected' : ''} onClick={() => setPaymentMethodId(method.id)}><Smartphone size={15} /><span>{method.name}</span></button>)}</div>
+    <div className={`payment-advice ${paymentMethod.status}`}><div><strong>{paymentMethod.status === 'recommended' ? '適合使用' : paymentMethod.status === 'conditional' ? '有條件使用' : '不建議當主要方式'}</strong><p>{paymentMethod.note}</p>{paymentMethod.officialUrl && <a href={paymentMethod.officialUrl} target="_blank" rel="noreferrer">查看官方說明</a>}</div></div>
     <div className="section-title card-ranking-title"><h3>韓國消費推薦</h3><span>依本次金額估算</span></div>
     <div className="card-ranking">{recommendations.map((preset, index) => <button key={preset.presetId} className={preset.presetId === card.presetId ? 'selected' : ''} onClick={() => setCard(preset)}><span className="rank-number">{index + 1}</span><div><strong>{preset.bank}</strong><small>{preset.name}</small></div><span className={preset.benefit >= 0 ? 'positive' : ''}>{preset.benefit >= 0 ? '省' : '多付'} NT$ {moneyFormat.format(Math.abs(preset.benefit))}</span></button>)}</div>
     <p className="helper-text ranking-note">排行以「回饋率－1.5% 海外手續費」估算，不代表所有交易都符合加碼；請點選卡片查看回饋上限與使用條件。</p>
