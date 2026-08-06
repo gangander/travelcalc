@@ -1,6 +1,7 @@
-export type CurrencyCode = 'TWD' | 'KRW'
+export type CurrencyCode = 'TWD' | 'KRW' | 'JPY' | 'THB' | 'USD' | 'SGD' | 'EUR'
 
 export type ExchangeRate = {
+  currency?: CurrencyCode
   rate: number
   date: string
   fetchedAt: string
@@ -44,6 +45,7 @@ export type CardSettings = {
   note?: string
   officialUrl?: string
   verifiedAt?: string
+  countries?: string[]
 }
 
 export type SavedProduct = {

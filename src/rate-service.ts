@@ -1,6 +1,6 @@
-import type { ExchangeRate } from './types'
+import type { CurrencyCode, ExchangeRate } from './types'
 
-const RATE_CACHE_KEY = 'travelcalc:rate'
+const rateCacheKey = (currency: CurrencyCode) => `travelcalc:rate:${currency}`
 
 type FrankfurterResponse = {
   date: string
@@ -9,9 +9,9 @@ type FrankfurterResponse = {
   rate: number
 }
 
-export function cachedRate(): ExchangeRate | null {
+export function cachedRate(currency: CurrencyCode = 'KRW'): ExchangeRate | null {
   try {
-    const stored = localStorage.getItem(RATE_CACHE_KEY)
+    const stored = localStorage.getItem(rateCacheKey(currency)) ?? (currency === 'KRW' ? localStorage.getItem('travelcalc:rate') : null)
     if (!stored) return null
     const parsed = JSON.parse(stored) as ExchangeRate
     return Number.isFinite(parsed.rate) ? { ...parsed, source: 'cached' } : null
@@ -20,30 +20,32 @@ export function cachedRate(): ExchangeRate | null {
   }
 }
 
-export async function fetchTwdKrwRate(): Promise<ExchangeRate> {
-  const response = await fetch('https://api.frankfurter.dev/v2/rate/TWD/KRW')
+export async function fetchTwdRate(currency: CurrencyCode): Promise<ExchangeRate> {
+  const response = await fetch(`https://api.frankfurter.dev/v2/rate/TWD/${currency}`)
   if (!response.ok) throw new Error('匯率服務暫時無法使用')
 
   const data = (await response.json()) as FrankfurterResponse
   if (!Number.isFinite(data.rate) || data.rate <= 0) throw new Error('匯率資料格式錯誤')
 
   const rate: ExchangeRate = {
+    currency,
     rate: data.rate,
     date: data.date,
     fetchedAt: new Date().toISOString(),
     source: 'live',
   }
-  localStorage.setItem(RATE_CACHE_KEY, JSON.stringify(rate))
+  localStorage.setItem(rateCacheKey(currency), JSON.stringify(rate))
   return rate
 }
 
-export function saveManualRate(rate: number): ExchangeRate {
+export function saveManualRate(rate: number, currency: CurrencyCode): ExchangeRate {
   const value: ExchangeRate = {
+    currency,
     rate,
     date: new Date().toISOString().slice(0, 10),
     fetchedAt: new Date().toISOString(),
     source: 'manual',
   }
-  localStorage.setItem(RATE_CACHE_KEY, JSON.stringify(value))
+  localStorage.setItem(rateCacheKey(currency), JSON.stringify(value))
   return value
 }
