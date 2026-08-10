@@ -5,15 +5,15 @@ import {
 } from 'lucide-react'
 import { cachedRate, fetchTwdRate, saveManualRate } from './rate-service'
 import { loadStored, saveStored } from './storage'
+import { loadSavedProducts } from './product-storage'
+import { TAX_REFUND_RULES, type DestinationId } from './tax-refund'
+import { useThemePreference, type ThemePreference } from './theme'
 import type { CardSettings, ConversionRecord, CurrencyCode, ExchangeRate, Expense, SavedProduct, Trip } from './types'
 
 type Currency = { code: CurrencyCode; symbol: string; flag: string; name: string }
-type DestinationId = 'kr' | 'jp' | 'th' | 'us' | 'sg' | 'eu'
 type Destination = { id: DestinationId; country: string; flag: string; currency: Currency }
-type TaxRefundRule = { eligible: boolean; minimum: number | null; defaultRefundRate: number; rule: string; detail: string; officialUrl: string }
 type Tab = 'convert' | 'shop' | 'trips' | 'wallet'
 type Sheet = 'settings' | 'history' | 'expense' | 'trip' | null
-type ThemePreference = 'system' | 'light' | 'dark'
 type PaymentMethodId = 'card' | 'apple-pay' | 'google-wallet' | 'samsung-wallet' | 'line-pay' | 'kakao-pay' | 'naver-pay'
 type PaymentMethod = { id: PaymentMethodId; name: string; status: 'recommended' | 'conditional' | 'not-recommended'; note: string; officialUrl?: string }
 
@@ -32,14 +32,6 @@ const DESTINATIONS: Destination[] = [
   { id: 'sg', country: '新加坡', flag: '🇸🇬', currency: SGD },
   { id: 'eu', country: '歐元區', flag: '🇪🇺', currency: EUR },
 ]
-const TAX_REFUND_RULES: Record<DestinationId, TaxRefundRule> = {
-  kr: { eligible: true, minimum: 15000, defaultRefundRate: 7, rule: '單筆滿 ₩15,000', detail: '於 Tax Refund 商店購買；即時退稅單筆須低於 ₩1,000,000，並依規定攜帶商品出境。', officialUrl: 'https://english.visitkorea.or.kr/svc/contents/contentsView.do?menuSn=929&vcontsId=248767' },
-  jp: { eligible: true, minimum: 5000, defaultRefundRate: 10, rule: '同店同日未稅滿 ¥5,000', detail: '限合格免稅店與短期旅客；消耗品上限 ¥500,000，離境時需持有商品並出示護照。', officialUrl: 'https://www.customs.go.jp/english/c-answer_e/pdf/FAX5004e.pdf' },
-  th: { eligible: true, minimum: 2000, defaultRefundRate: 4, rule: '同店同日滿 ฿2,000', detail: '商店須有 VAT Refund for Tourists 標誌，購買時出示護照並索取 P.P.10，商品須於 60 天內帶出境。', officialUrl: 'https://vrtweb.rd.go.th/81.html' },
-  us: { eligible: false, minimum: null, defaultRefundRate: 0, rule: '沒有全國統一旅客退稅', detail: '美國政府不退還外國旅客的銷售稅；少數州或商家方案可能不同，請依當地規定確認。', officialUrl: 'https://www.help.cbp.gov/s/article/Article-1039?language=en_US' },
-  sg: { eligible: true, minimum: 100, defaultRefundRate: 7, rule: '同一 GST 商戶滿 S$100', detail: '可合併同一商戶最多 3 張同日收據；須為 eTRS 參與商店，並於購買後 2 個月內攜貨離境。', officialUrl: 'https://www.iras.gov.sg/taxes/goods-services-tax-%28gst%29/consumers/tourist-refund-scheme' },
-  eu: { eligible: true, minimum: null, defaultRefundRate: 12, rule: '門檻依購買國家而異', detail: '限非歐盟居民；商品與文件須於購買後 3 個月內在最後離開歐盟時交海關確認，實退額會扣除服務費。', officialUrl: 'https://europa.eu/youreurope/citizens/consumers/shopping/vat/index_en.htm' },
-}
 const CURRENCIES = [TWD, KRW, JPY, THB, USD, SGD, EUR]
 const currencyByCode = (code: CurrencyCode) => CURRENCIES.find((currency) => currency.code === code) ?? TWD
 const DEFAULT_RATES: Record<Exclude<CurrencyCode, 'TWD'>, number> = { KRW: 45.32, JPY: 4.7, THB: 1.08, USD: 0.031, SGD: 0.04, EUR: 0.026 }
@@ -106,9 +98,9 @@ function App() {
     return CARD_PRESETS.find((preset) => preset.presetId === saved.presetId) ?? saved
   })
   const [paymentMethodId, setPaymentMethodId] = useState<PaymentMethodId>(() => loadStored('travelcalc:paymentMethod', 'card'))
-  const [products, setProducts] = useState<SavedProduct[]>(() => loadStored<Array<SavedProduct & { priceKrw?: number }>>('travelcalc:products', []).map((product) => ({ ...product, price: product.price ?? product.priceKrw ?? 0, currency: product.currency ?? 'KRW' })))
+  const [products, setProducts] = useState<SavedProduct[]>(loadSavedProducts)
   const [toast, setToast] = useState('')
-  const [theme, setTheme] = useState<ThemePreference>(() => loadStored('travelcalc:theme', 'system'))
+  const [theme, setTheme] = useThemePreference()
 
   const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0]
   const numericAmount = Number(amount) || 0
@@ -125,18 +117,6 @@ function App() {
   useEffect(() => { saveStored('travelcalc:paymentMethod', paymentMethodId) }, [paymentMethodId])
   useEffect(() => { saveStored('travelcalc:products', products) }, [products])
   useEffect(() => { saveStored('travelcalc:destination', destinationId) }, [destinationId])
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const applyTheme = () => {
-      const resolved = theme === 'system' ? (media.matches ? 'dark' : 'light') : theme
-      document.documentElement.dataset.theme = resolved
-      document.documentElement.style.colorScheme = resolved
-    }
-    applyTheme()
-    saveStored('travelcalc:theme', theme)
-    media.addEventListener('change', applyTheme)
-    return () => media.removeEventListener('change', applyTheme)
-  }, [theme])
   // refreshRate also updates UI state; the destination currency is the only trigger required here.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void refreshRate(destination.currency.code) }, [destination.currency.code])
