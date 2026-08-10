@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowDownUp, CalendarDays, Check, CircleDollarSign, Clock3, CreditCard, Heart,
-  History, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, Settings2, ShoppingBag, Smartphone, Sparkles, Trash2, WalletCards, X,
+  History, Laptop, Moon, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, Settings2, ShoppingBag, Smartphone, Sparkles, Sun, Trash2, WalletCards, X,
 } from 'lucide-react'
 import { cachedRate, fetchTwdRate, saveManualRate } from './rate-service'
 import { loadStored, saveStored } from './storage'
@@ -12,6 +12,7 @@ type DestinationId = 'kr' | 'jp' | 'th' | 'us' | 'sg' | 'eu'
 type Destination = { id: DestinationId; country: string; flag: string; currency: Currency }
 type Tab = 'convert' | 'shop' | 'trips' | 'wallet'
 type Sheet = 'settings' | 'history' | 'expense' | 'trip' | null
+type ThemePreference = 'system' | 'light' | 'dark'
 type PaymentMethodId = 'card' | 'apple-pay' | 'google-wallet' | 'samsung-wallet' | 'line-pay' | 'kakao-pay' | 'naver-pay'
 type PaymentMethod = { id: PaymentMethodId; name: string; status: 'recommended' | 'conditional' | 'not-recommended'; note: string; officialUrl?: string }
 
@@ -98,6 +99,7 @@ function App() {
   const [paymentMethodId, setPaymentMethodId] = useState<PaymentMethodId>(() => loadStored('travelcalc:paymentMethod', 'card'))
   const [products, setProducts] = useState<SavedProduct[]>(() => loadStored('travelcalc:products', []))
   const [toast, setToast] = useState('')
+  const [theme, setTheme] = useState<ThemePreference>(() => loadStored('travelcalc:theme', 'system'))
 
   const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0]
   const numericAmount = Number(amount) || 0
@@ -114,6 +116,18 @@ function App() {
   useEffect(() => { saveStored('travelcalc:paymentMethod', paymentMethodId) }, [paymentMethodId])
   useEffect(() => { saveStored('travelcalc:products', products) }, [products])
   useEffect(() => { saveStored('travelcalc:destination', destinationId) }, [destinationId])
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const applyTheme = () => {
+      const resolved = theme === 'system' ? (media.matches ? 'dark' : 'light') : theme
+      document.documentElement.dataset.theme = resolved
+      document.documentElement.style.colorScheme = resolved
+    }
+    applyTheme()
+    saveStored('travelcalc:theme', theme)
+    media.addEventListener('change', applyTheme)
+    return () => media.removeEventListener('change', applyTheme)
+  }, [theme])
   // refreshRate also updates UI state; the destination currency is the only trigger required here.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void refreshRate(destination.currency.code) }, [destination.currency.code])
@@ -207,7 +221,7 @@ function App() {
         </nav>
 
         {sheet && <Sheet title={sheetTitle(sheet)} onClose={() => setSheet(null)}>
-          {sheet === 'settings' && <Settings currency={destination.currency} rate={rate} rateDraft={rateDraft} setRateDraft={setRateDraft} onManual={applyManualRate} onRefresh={refreshRate} onClear={clearAllData} loading={rateLoading} />}
+          {sheet === 'settings' && <Settings currency={destination.currency} rate={rate} rateDraft={rateDraft} setRateDraft={setRateDraft} onManual={applyManualRate} onRefresh={refreshRate} onClear={clearAllData} loading={rateLoading} theme={theme} onTheme={setTheme} />}
           {sheet === 'history' && <HistoryList records={records} onClear={() => setRecords([])} />}
           {sheet === 'expense' && <ExpenseForm trip={activeTrip} currency={destination.currency} rate={rate.rate} onSave={(expense) => { setTrips((current) => current.map((trip) => trip.id === activeTrip?.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setSheet(null); setToast('花費已記錄') }} />}
           {sheet === 'trip' && <TripForm onSave={(trip) => { setTrips((current) => [...current, trip]); setActiveTripId(trip.id); setSheet(null); setToast('新旅程建立完成') }} />}
@@ -306,8 +320,8 @@ function WalletView({ destination, card, setCard, paymentMethodId, setPaymentMet
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><section className="sheet"><div className="sheet-handle" /><header><h2>{title}</h2><button onClick={onClose} aria-label="關閉"><X size={20} /></button></header>{children}</section></div> }
 function sheetTitle(sheet: Exclude<Sheet, null>) { return { settings: '匯率與設定', history: '換算紀錄', expense: '新增旅費', trip: '建立旅程' }[sheet] }
 
-function Settings({ currency, rate, rateDraft, setRateDraft, onManual, onRefresh, onClear, loading }: { currency: Currency; rate: ExchangeRate; rateDraft: string; setRateDraft: (v: string) => void; onManual: () => void; onRefresh: () => void; onClear: () => void; loading: boolean }) {
-  return <div className="sheet-content"><div className="setting-status"><span className={`status-dot ${rate.source}`} /><div><strong>{rate.source === 'live' ? '已連線自動匯率' : rate.source === 'manual' ? '目前使用手動匯率' : '目前使用快取匯率'}</strong><small>Frankfurter 官方參考匯率 · {rate.date || '尚未更新'}</small></div><button onClick={onRefresh} disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button></div><div className="form-card"><label>手動設定 1 TWD 可換多少 {currency.code}<div className="inline-input"><input inputMode="decimal" value={rateDraft} onChange={(e) => setRateDraft(cleanNumber(e.target.value))} /><button onClick={onManual}>套用</button></div></label></div><p className="helper-text">有網路時會自動更新；更新失敗會保留這個幣別上次成功的匯率。銀行現鈔或信用卡入帳匯率可能不同。</p><button className="danger-button" onClick={onClear}><Trash2 size={16} />清除所有旅行資料</button></div>
+function Settings({ currency, rate, rateDraft, setRateDraft, onManual, onRefresh, onClear, loading, theme, onTheme }: { currency: Currency; rate: ExchangeRate; rateDraft: string; setRateDraft: (v: string) => void; onManual: () => void; onRefresh: () => void; onClear: () => void; loading: boolean; theme: ThemePreference; onTheme: (theme: ThemePreference) => void }) {
+  return <div className="sheet-content"><div className="theme-setting"><div><strong>外觀</strong><small>可跟隨手機的顯示模式</small></div><div className="theme-picker" role="group" aria-label="外觀模式"><button className={theme === 'system' ? 'active' : ''} onClick={() => onTheme('system')} aria-pressed={theme === 'system'}><Laptop size={15} />自動</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')} aria-pressed={theme === 'light'}><Sun size={15} />淺色</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')} aria-pressed={theme === 'dark'}><Moon size={15} />深色</button></div></div><div className="setting-status"><span className={`status-dot ${rate.source}`} /><div><strong>{rate.source === 'live' ? '已連線自動匯率' : rate.source === 'manual' ? '目前使用手動匯率' : '目前使用快取匯率'}</strong><small>Frankfurter 官方參考匯率 · {rate.date || '尚未更新'}</small></div><button onClick={onRefresh} disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button></div><div className="form-card"><label>手動設定 1 TWD 可換多少 {currency.code}<div className="inline-input"><input inputMode="decimal" value={rateDraft} onChange={(e) => setRateDraft(cleanNumber(e.target.value))} /><button onClick={onManual}>套用</button></div></label></div><p className="helper-text">有網路時會自動更新；更新失敗會保留這個幣別上次成功的匯率。銀行現鈔或信用卡入帳匯率可能不同。</p><button className="danger-button" onClick={onClear}><Trash2 size={16} />清除所有旅行資料</button></div>
 }
 
 function HistoryList({ records, onClear }: { records: ConversionRecord[]; onClear: () => void }) {
