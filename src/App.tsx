@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowDownUp, CalendarDays, Check, CircleDollarSign, Clock3, CreditCard, Heart,
-  History, Laptop, Moon, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, Settings2, ShoppingBag, Smartphone, Sparkles, Sun, Trash2, WalletCards, X,
+  Download, History, Laptop, Moon, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, Settings2, Share2, ShoppingBag, Smartphone, Sparkles, Sun, Trash2, WifiOff, WalletCards, X,
 } from 'lucide-react'
 import { cachedRate, fetchTwdRate, saveManualRate } from './rate-service'
 import { loadStored, saveStored } from './storage'
 import { loadSavedProducts } from './product-storage'
+import { usePwaStatus } from './pwa'
 import { TAX_REFUND_RULES, type DestinationId } from './tax-refund'
 import { useThemePreference, type ThemePreference } from './theme'
 import type { CardSettings, ConversionRecord, CurrencyCode, ExchangeRate, Expense, SavedProduct, Trip } from './types'
@@ -101,6 +102,7 @@ function App() {
   const [products, setProducts] = useState<SavedProduct[]>(loadSavedProducts)
   const [toast, setToast] = useState('')
   const [theme, setTheme] = useThemePreference()
+  const pwa = usePwaStatus()
 
   const activeTrip = trips.find((trip) => trip.id === activeTripId) ?? trips[0]
   const numericAmount = Number(amount) || 0
@@ -195,6 +197,7 @@ function App() {
           <button className="icon-button" onClick={() => setSheet('settings')} aria-label="開啟設定"><MoreHorizontal size={22} /></button>
         </header>
         <div className="destination-picker" aria-label="選擇目的地">{DESTINATIONS.map((item) => <button key={item.id} className={item.id === destination.id ? 'active' : ''} onClick={() => selectDestination(item.id)}><span>{item.flag}</span>{item.country}</button>)}</div>
+        <PwaBanner pwa={pwa} />
 
         {tab === 'convert' && <ConvertView destination={destination} from={from} to={to} amount={amount} converted={converted} rate={rate} loading={rateLoading} error={rateError} onAmount={setAmount} onSwap={swap} onRefresh={refreshRate} onSettings={() => { setRateDraft(String(rate.rate)); setSheet('settings') }} onRecord={saveConversion} onShop={() => setTab('shop')} onWallet={() => setTab('wallet')} onHistory={() => setSheet('history')} />}
         {tab === 'shop' && <ShoppingView key={destination.id} destination={destination} rate={rate.rate} products={products.filter((product) => product.currency === destination.currency.code)} onSave={(product) => { setProducts((current) => [product, ...current]); setToast('商品已收藏') }} onDelete={(id) => setProducts((current) => current.filter((product) => product.id !== id))} onExpense={(product) => { if (!activeTrip) return setToast('請先建立旅程'); const total = product.price * product.quantity; const expense: Expense = { id: newId(), title: product.name, amount: total, currency: product.currency, twdAmount: total / rate.rate, category: '購物', createdAt: new Date().toISOString() }; setTrips((current) => current.map((trip) => trip.id === activeTrip.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setToast('已加入旅程花費') }} />}
@@ -209,7 +212,7 @@ function App() {
         </nav>
 
         {sheet && <Sheet title={sheetTitle(sheet)} onClose={() => setSheet(null)}>
-          {sheet === 'settings' && <Settings currency={destination.currency} rate={rate} rateDraft={rateDraft} setRateDraft={setRateDraft} onManual={applyManualRate} onRefresh={refreshRate} onClear={clearAllData} loading={rateLoading} theme={theme} onTheme={setTheme} />}
+          {sheet === 'settings' && <Settings currency={destination.currency} rate={rate} rateDraft={rateDraft} setRateDraft={setRateDraft} onManual={applyManualRate} onRefresh={refreshRate} onClear={clearAllData} loading={rateLoading} theme={theme} onTheme={setTheme} pwa={pwa} />}
           {sheet === 'history' && <HistoryList records={records} onClear={() => setRecords([])} />}
           {sheet === 'expense' && <ExpenseForm trip={activeTrip} currency={destination.currency} rate={rate.rate} onSave={(expense) => { setTrips((current) => current.map((trip) => trip.id === activeTrip?.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setSheet(null); setToast('花費已記錄') }} />}
           {sheet === 'trip' && <TripForm onSave={(trip) => { setTrips((current) => [...current, trip]); setActiveTripId(trip.id); setSheet(null); setToast('新旅程建立完成') }} />}
@@ -308,8 +311,22 @@ function WalletView({ destination, card, setCard, paymentMethodId, setPaymentMet
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><section className="sheet"><div className="sheet-handle" /><header><h2>{title}</h2><button onClick={onClose} aria-label="關閉"><X size={20} /></button></header>{children}</section></div> }
 function sheetTitle(sheet: Exclude<Sheet, null>) { return { settings: '匯率與設定', history: '換算紀錄', expense: '新增旅費', trip: '建立旅程' }[sheet] }
 
-function Settings({ currency, rate, rateDraft, setRateDraft, onManual, onRefresh, onClear, loading, theme, onTheme }: { currency: Currency; rate: ExchangeRate; rateDraft: string; setRateDraft: (v: string) => void; onManual: () => void; onRefresh: () => void; onClear: () => void; loading: boolean; theme: ThemePreference; onTheme: (theme: ThemePreference) => void }) {
-  return <div className="sheet-content"><div className="theme-setting"><div><strong>外觀</strong><small>可跟隨手機的顯示模式</small></div><div className="theme-picker" role="group" aria-label="外觀模式"><button className={theme === 'system' ? 'active' : ''} onClick={() => onTheme('system')} aria-pressed={theme === 'system'}><Laptop size={15} />自動</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')} aria-pressed={theme === 'light'}><Sun size={15} />淺色</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')} aria-pressed={theme === 'dark'}><Moon size={15} />深色</button></div></div><div className="setting-status"><span className={`status-dot ${rate.source}`} /><div><strong>{rate.source === 'live' ? '已連線自動匯率' : rate.source === 'manual' ? '目前使用手動匯率' : '目前使用快取匯率'}</strong><small>Frankfurter 官方參考匯率 · {rate.date || '尚未更新'}</small></div><button onClick={onRefresh} disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button></div><div className="form-card"><label>手動設定 1 TWD 可換多少 {currency.code}<div className="inline-input"><input inputMode="decimal" value={rateDraft} onChange={(e) => setRateDraft(cleanNumber(e.target.value))} /><button onClick={onManual}>套用</button></div></label></div><p className="helper-text">有網路時會自動更新；更新失敗會保留這個幣別上次成功的匯率。銀行現鈔或信用卡入帳匯率可能不同。</p><button className="danger-button" onClick={onClear}><Trash2 size={16} />清除所有旅行資料</button></div>
+type PwaStatus = ReturnType<typeof usePwaStatus>
+
+function PwaBanner({ pwa }: { pwa: PwaStatus }) {
+  if (pwa.needRefresh) return <div className="pwa-banner update"><RefreshCw size={16} /><div><strong>TravelCalc 有新版本</strong><small>更新後即可使用最新功能</small></div><button onClick={() => void pwa.update()}>立即更新</button><button className="pwa-dismiss" onClick={pwa.dismissRefresh} aria-label="稍後更新"><X size={14} /></button></div>
+  if (!pwa.isOnline) return <div className="pwa-banner offline"><WifiOff size={16} /><div><strong>目前離線使用</strong><small>換算與已儲存資料仍可使用</small></div></div>
+  if (pwa.offlineReady) return <div className="pwa-banner"><Download size={16} /><div><strong>已可離線使用</strong><small>旅行中沒有網路也能開啟</small></div><button className="pwa-dismiss" onClick={pwa.dismissOfflineReady} aria-label="關閉提示"><X size={14} /></button></div>
+  return null
+}
+
+function PwaSettings({ pwa }: { pwa: PwaStatus }) {
+  if (pwa.isInstalled) return <div className="pwa-setting installed"><span><Check size={17} /></span><div><strong>TravelCalc 已安裝</strong><small>可以從手機主畫面直接開啟</small></div></div>
+  return <div className="pwa-setting"><span><Download size={17} /></span><div><strong>安裝 TravelCalc</strong><small>{pwa.isIos && !pwa.canInstall ? '在 Safari 點分享，再選「加入主畫面」' : '安裝後可像一般 App 開啟並離線使用'}</small></div>{pwa.canInstall ? <button onClick={() => void pwa.install()}>安裝</button> : pwa.isIos ? <Share2 size={17} /> : <small className="install-hint">請使用瀏覽器選單的「安裝應用程式」</small>}</div>
+}
+
+function Settings({ currency, rate, rateDraft, setRateDraft, onManual, onRefresh, onClear, loading, theme, onTheme, pwa }: { currency: Currency; rate: ExchangeRate; rateDraft: string; setRateDraft: (v: string) => void; onManual: () => void; onRefresh: () => void; onClear: () => void; loading: boolean; theme: ThemePreference; onTheme: (theme: ThemePreference) => void; pwa: PwaStatus }) {
+  return <div className="sheet-content"><div className="theme-setting"><div><strong>外觀</strong><small>可跟隨手機的顯示模式</small></div><div className="theme-picker" role="group" aria-label="外觀模式"><button className={theme === 'system' ? 'active' : ''} onClick={() => onTheme('system')} aria-pressed={theme === 'system'}><Laptop size={15} />自動</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')} aria-pressed={theme === 'light'}><Sun size={15} />淺色</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')} aria-pressed={theme === 'dark'}><Moon size={15} />深色</button></div></div><PwaSettings pwa={pwa} /><div className="setting-status"><span className={`status-dot ${rate.source}`} /><div><strong>{rate.source === 'live' ? '已連線自動匯率' : rate.source === 'manual' ? '目前使用手動匯率' : '目前使用快取匯率'}</strong><small>Frankfurter 官方參考匯率 · {rate.date || '尚未更新'}</small></div><button onClick={onRefresh} disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button></div><div className="form-card"><label>手動設定 1 TWD 可換多少 {currency.code}<div className="inline-input"><input inputMode="decimal" value={rateDraft} onChange={(e) => setRateDraft(cleanNumber(e.target.value))} /><button onClick={onManual}>套用</button></div></label></div><p className="helper-text">有網路時會自動更新；更新失敗會保留這個幣別上次成功的匯率。銀行現鈔或信用卡入帳匯率可能不同。</p><button className="danger-button" onClick={onClear}><Trash2 size={16} />清除所有旅行資料</button></div>
 }
 
 function HistoryList({ records, onClear }: { records: ConversionRecord[]; onClear: () => void }) {

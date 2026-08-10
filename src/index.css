@@ -24,6 +24,15 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .destination-picker button { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; padding: 8px 10px; color: #708691; background: rgba(255,255,255,.025); border: 1px solid rgba(255,255,255,.065); border-radius: 12px; font-size: 9px; white-space: nowrap; }
 .destination-picker button.active { color: #dce9e9; background: rgba(105,202,190,.1); border-color: rgba(122,220,207,.3); }
 .destination-picker span { font-size: 14px; }
+.pwa-banner { position: relative; z-index: 3; display: flex; align-items: center; gap: 9px; margin-top: 8px; padding: 10px 11px; border: 1px solid rgba(112,193,192,.16); border-radius: 15px; color: #94dad5; background: rgba(51,113,115,.14); backdrop-filter: blur(18px); animation: fadeIn .2s; }
+.pwa-banner > svg { flex-shrink: 0; }
+.pwa-banner > div { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 2px; }
+.pwa-banner strong { color: #d6edeb; font-size: 9px; }
+.pwa-banner small { color: #75929b; font-size: 8px; }
+.pwa-banner > button { min-height: 30px; padding: 0 9px; border: 0; border-radius: 9px; color: #c9eeeb; background: rgba(111,196,190,.16); font-size: 8px; }
+.pwa-banner > button.pwa-dismiss { width: 28px; padding: 0; color: #80959e; background: transparent; }
+.pwa-banner.offline { color: #d0a27f; border-color: rgba(217,157,111,.15); background: rgba(173,111,71,.09); }
+.pwa-banner.update { color: #b8a8e4; border-color: rgba(172,148,224,.18); background: rgba(120,93,174,.1); }
 .hero-copy { margin: 34px 2px 21px; }
 .hero-copy p, .page-heading p { color: #8ba0ae; font-size: 13px; margin: 0 0 8px; }
 .hero-copy h2, .page-heading h2 { font-size: clamp(29px, 8vw, 37px); line-height: 1.12; letter-spacing: -.055em; margin: 0; }
@@ -162,6 +171,15 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .theme-picker button { min-height: 35px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 0; border-radius: 10px; color: #718792; background: transparent; font-size: 9px; transition: background .2s, color .2s, transform .2s; }
 .theme-picker button.active { color: #dff2f0; background: rgba(111,196,190,.16); box-shadow: inset 0 0 0 1px rgba(141,213,210,.12); }
 .theme-picker button:active { transform: scale(.96); }
+.pwa-setting { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 13px; border-radius: 17px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.06); }
+.pwa-setting > span { width: 34px; height: 34px; display: grid; flex-shrink: 0; place-items: center; border-radius: 11px; color: #8dd5d2; background: rgba(141,213,210,.09); }
+.pwa-setting > div { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
+.pwa-setting strong { font-size: 10px; }
+.pwa-setting small { color: #718792; font-size: 8px; line-height: 1.4; }
+.pwa-setting > button { min-height: 32px; padding: 0 12px; border: 0; border-radius: 10px; color: #bfe9e5; background: rgba(111,196,190,.16); font-size: 9px; }
+.pwa-setting > svg { color: #8dd5d2; }
+.pwa-setting .install-hint { max-width: 92px; text-align: right; }
+.pwa-setting.installed > span { color: #8ed4b0; background: rgba(104,198,145,.09); }
 .setting-status > div, .current-trip > div { flex: 1; }
 .setting-status strong, .current-trip strong { font-size: 11px; }
 .setting-status small { color: #718792; font-size: 8px; margin-top: 3px; }
@@ -289,6 +307,11 @@ html[data-theme='light'] .sheet header button { color: #314c55; background: rgba
 html[data-theme='light'] .theme-picker { background: rgba(66,96,106,.08); }
 html[data-theme='light'] .theme-picker button { color: #667b85; }
 html[data-theme='light'] .theme-picker button.active { color: #236d69; background: rgba(255,255,255,.9); box-shadow: 0 3px 12px rgba(52,78,86,.1); }
+html[data-theme='light'] .pwa-banner { color: #287874; background: rgba(255,255,255,.58); border-color: rgba(48,139,133,.18); }
+html[data-theme='light'] .pwa-banner strong { color: #29424b; }
+html[data-theme='light'] .pwa-banner > button { color: #236d69; background: rgba(75,160,154,.13); }
+html[data-theme='light'] .pwa-setting { background: rgba(255,255,255,.52); border-color: rgba(54,83,94,.11); }
+html[data-theme='light'] .pwa-setting > button { color: #236d69; background: rgba(75,160,154,.13); }
 html[data-theme='light'] .tax-rule-card a { color: #237c78; }
 html[data-theme='light'] input,
 html[data-theme='light'] select { color: #21363f; }
