@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowDownUp, CalendarDays, Check, CircleDollarSign, Clock3, CreditCard, Heart,
-  Download, History, Laptop, Moon, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, Settings2, Share2, ShoppingBag, Smartphone, Sparkles, Sun, Trash2, WifiOff, WalletCards, X,
+  Camera, Download, History, Laptop, LoaderCircle, Moon, MoreHorizontal, Plane, Plus, ReceiptText, RefreshCw, ScanLine, Settings2, Share2, ShoppingBag, Smartphone, Sparkles, Sun, Trash2, WifiOff, WalletCards, X,
 } from 'lucide-react'
 import { cachedRate, fetchTwdRate, saveManualRate } from './rate-service'
 import { loadStored, saveStored } from './storage'
 import { loadSavedProducts } from './product-storage'
 import { usePwaStatus } from './pwa'
+import { recognizePrice, supportsNativeOcr } from './ocr'
 import { TAX_REFUND_RULES, type DestinationId } from './tax-refund'
 import { useThemePreference, type ThemePreference } from './theme'
 import type { CardSettings, ConversionRecord, CurrencyCode, ExchangeRate, Expense, SavedProduct, Trip } from './types'
@@ -14,7 +15,7 @@ import type { CardSettings, ConversionRecord, CurrencyCode, ExchangeRate, Expens
 type Currency = { code: CurrencyCode; symbol: string; flag: string; name: string }
 type Destination = { id: DestinationId; country: string; flag: string; currency: Currency }
 type Tab = 'convert' | 'shop' | 'trips' | 'wallet'
-type Sheet = 'settings' | 'history' | 'expense' | 'trip' | null
+type Sheet = 'settings' | 'history' | 'expense' | 'trip' | 'scanner' | null
 type PaymentMethodId = 'card' | 'apple-pay' | 'google-wallet' | 'samsung-wallet' | 'line-pay' | 'kakao-pay' | 'naver-pay'
 type PaymentMethod = { id: PaymentMethodId; name: string; status: 'recommended' | 'conditional' | 'not-recommended'; note: string; officialUrl?: string }
 
@@ -199,7 +200,7 @@ function App() {
         <div className="destination-picker" aria-label="選擇目的地">{DESTINATIONS.map((item) => <button key={item.id} className={item.id === destination.id ? 'active' : ''} onClick={() => selectDestination(item.id)}><span>{item.flag}</span>{item.country}</button>)}</div>
         <PwaBanner pwa={pwa} />
 
-        {tab === 'convert' && <ConvertView destination={destination} from={from} to={to} amount={amount} converted={converted} rate={rate} loading={rateLoading} error={rateError} onAmount={setAmount} onSwap={swap} onRefresh={refreshRate} onSettings={() => { setRateDraft(String(rate.rate)); setSheet('settings') }} onRecord={saveConversion} onShop={() => setTab('shop')} onWallet={() => setTab('wallet')} onHistory={() => setSheet('history')} />}
+        {tab === 'convert' && <ConvertView destination={destination} from={from} to={to} amount={amount} converted={converted} rate={rate} loading={rateLoading} error={rateError} onAmount={setAmount} onSwap={swap} onRefresh={refreshRate} onSettings={() => { setRateDraft(String(rate.rate)); setSheet('settings') }} onRecord={saveConversion} onShop={() => setTab('shop')} onWallet={() => setTab('wallet')} onHistory={() => setSheet('history')} onScan={() => setSheet('scanner')} />}
         {tab === 'shop' && <ShoppingView key={destination.id} destination={destination} rate={rate.rate} products={products.filter((product) => product.currency === destination.currency.code)} onSave={(product) => { setProducts((current) => [product, ...current]); setToast('商品已收藏') }} onDelete={(id) => setProducts((current) => current.filter((product) => product.id !== id))} onExpense={(product) => { if (!activeTrip) return setToast('請先建立旅程'); const total = product.price * product.quantity; const expense: Expense = { id: newId(), title: product.name, amount: total, currency: product.currency, twdAmount: total / rate.rate, category: '購物', createdAt: new Date().toISOString() }; setTrips((current) => current.map((trip) => trip.id === activeTrip.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setToast('已加入旅程花費') }} />}
         {tab === 'trips' && <TripsView trips={trips} activeTripId={activeTripId} rate={rate.rate} onSelect={setActiveTripId} onAdd={() => setSheet('trip')} onExpense={() => setSheet('expense')} />}
         {tab === 'wallet' && <WalletView destination={destination} card={card} setCard={setCard} paymentMethodId={paymentMethodId} setPaymentMethodId={setPaymentMethodId} base={cardBaseTwd} fee={cardFee} reward={cardReward} net={cardNet} amount={numericAmount} from={from} />}
@@ -216,6 +217,7 @@ function App() {
           {sheet === 'history' && <HistoryList records={records} onClear={() => setRecords([])} />}
           {sheet === 'expense' && <ExpenseForm trip={activeTrip} currency={destination.currency} rate={rate.rate} onSave={(expense) => { setTrips((current) => current.map((trip) => trip.id === activeTrip?.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setSheet(null); setToast('花費已記錄') }} />}
           {sheet === 'trip' && <TripForm onSave={(trip) => { setTrips((current) => [...current, trip]); setActiveTripId(trip.id); setSheet(null); setToast('新旅程建立完成') }} />}
+          {sheet === 'scanner' && <PriceScanner currency={destination.currency} onUse={(value) => { setFrom(destination.currency); setTo(TWD); setAmount(String(value)); setSheet(null); setToast('已帶入辨識金額') }} />}
         </Sheet>}
         {toast && <div className="toast"><Check size={16} />{toast}</div>}
       </section>
@@ -223,7 +225,7 @@ function App() {
   )
 }
 
-type ConvertProps = { destination: Destination; from: Currency; to: Currency; amount: string; converted: number; rate: ExchangeRate; loading: boolean; error: string; onAmount: (v: string) => void; onSwap: () => void; onRefresh: () => void; onSettings: () => void; onRecord: () => void; onShop: () => void; onWallet: () => void; onHistory: () => void }
+type ConvertProps = { destination: Destination; from: Currency; to: Currency; amount: string; converted: number; rate: ExchangeRate; loading: boolean; error: string; onAmount: (v: string) => void; onSwap: () => void; onRefresh: () => void; onSettings: () => void; onRecord: () => void; onShop: () => void; onWallet: () => void; onHistory: () => void; onScan: () => void }
 function ConvertView(props: ConvertProps) {
   const sourceLabel = props.rate.source === 'live' ? '即時參考匯率' : props.rate.source === 'manual' ? '手動匯率' : '上次匯率'
   return <>
@@ -236,6 +238,7 @@ function ConvertView(props: ConvertProps) {
       <div className="rate-meta"><span>{props.error || (props.rate.date ? `資料日期 ${props.rate.date}` : '準備更新匯率')}</span></div>
     </section>
     <section className="quick-actions">
+      <button onClick={props.onScan}><span className="action-icon green"><ScanLine size={21} /></span><strong>掃描價牌</strong><small>OCR 辨識</small></button>
       <button onClick={props.onShop}><span className="action-icon coral"><ShoppingBag size={21} /></span><strong>{props.destination.country}退稅</strong><small>規則・試算</small></button>
       <button onClick={props.onWallet}><span className="action-icon blue"><CreditCard size={21} /></span><strong>卡片試算</strong><small>回饋・手續費</small></button>
       <button onClick={props.onHistory}><span className="action-icon violet"><History size={21} /></span><strong>換算紀錄</strong><small>最近使用</small></button>
@@ -309,7 +312,7 @@ function WalletView({ destination, card, setCard, paymentMethodId, setPaymentMet
 }
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><section className="sheet"><div className="sheet-handle" /><header><h2>{title}</h2><button onClick={onClose} aria-label="關閉"><X size={20} /></button></header>{children}</section></div> }
-function sheetTitle(sheet: Exclude<Sheet, null>) { return { settings: '匯率與設定', history: '換算紀錄', expense: '新增旅費', trip: '建立旅程' }[sheet] }
+function sheetTitle(sheet: Exclude<Sheet, null>) { return { settings: '匯率與設定', history: '換算紀錄', expense: '新增旅費', trip: '建立旅程', scanner: '掃描商品價牌' }[sheet] }
 
 type PwaStatus = ReturnType<typeof usePwaStatus>
 
@@ -327,6 +330,46 @@ function PwaSettings({ pwa }: { pwa: PwaStatus }) {
 
 function Settings({ currency, rate, rateDraft, setRateDraft, onManual, onRefresh, onClear, loading, theme, onTheme, pwa }: { currency: Currency; rate: ExchangeRate; rateDraft: string; setRateDraft: (v: string) => void; onManual: () => void; onRefresh: () => void; onClear: () => void; loading: boolean; theme: ThemePreference; onTheme: (theme: ThemePreference) => void; pwa: PwaStatus }) {
   return <div className="sheet-content"><div className="theme-setting"><div><strong>外觀</strong><small>可跟隨手機的顯示模式</small></div><div className="theme-picker" role="group" aria-label="外觀模式"><button className={theme === 'system' ? 'active' : ''} onClick={() => onTheme('system')} aria-pressed={theme === 'system'}><Laptop size={15} />自動</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')} aria-pressed={theme === 'light'}><Sun size={15} />淺色</button><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')} aria-pressed={theme === 'dark'}><Moon size={15} />深色</button></div></div><PwaSettings pwa={pwa} /><div className="setting-status"><span className={`status-dot ${rate.source}`} /><div><strong>{rate.source === 'live' ? '已連線自動匯率' : rate.source === 'manual' ? '目前使用手動匯率' : '目前使用快取匯率'}</strong><small>Frankfurter 官方參考匯率 · {rate.date || '尚未更新'}</small></div><button onClick={onRefresh} disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button></div><div className="form-card"><label>手動設定 1 TWD 可換多少 {currency.code}<div className="inline-input"><input inputMode="decimal" value={rateDraft} onChange={(e) => setRateDraft(cleanNumber(e.target.value))} /><button onClick={onManual}>套用</button></div></label></div><p className="helper-text">有網路時會自動更新；更新失敗會保留這個幣別上次成功的匯率。銀行現鈔或信用卡入帳匯率可能不同。</p><button className="danger-button" onClick={onClear}><Trash2 size={16} />清除所有旅行資料</button></div>
+}
+
+function PriceScanner({ currency, onUse }: { currency: Currency; onUse: (value: number) => void }) {
+  const [preview, setPreview] = useState('')
+  const [amounts, setAmounts] = useState<number[]>([])
+  const [manual, setManual] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState(supportsNativeOcr() ? '拍攝清楚、正面的價牌，辨識率會更好。' : '首次辨識需下載裝置端 OCR 模型；請拍攝清楚、正面的價牌。')
+
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
+
+  async function scan(file?: File) {
+    if (!file) return
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current)
+      return URL.createObjectURL(file)
+    })
+    setAmounts([])
+    setLoading(true)
+    setMessage('正在裝置上辨識價牌…')
+    try {
+      const result = await recognizePrice(file)
+      setAmounts(result.amounts)
+      setMessage(result.amounts.length ? '請點選正確金額，再帶入換算。' : '沒有找到明確金額，請在下方手動確認。')
+    } catch {
+      setMessage('辨識沒有成功，請換一張清楚照片或手動輸入。')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const manualValue = Number(manual)
+  return <div className="sheet-content scanner-content">
+    <label className="scan-drop"><input type="file" accept="image/*" capture="environment" onChange={(event) => void scan(event.target.files?.[0])} /><span className="scan-camera">{loading ? <LoaderCircle className="spin" /> : <Camera />}</span><strong>{preview ? '重新拍攝或選擇照片' : '拍攝價牌或選擇照片'}</strong><small>圖片只在你的裝置上處理</small></label>
+    {preview && <div className="scan-preview"><img src={preview} alt="待辨識的商品價牌" /></div>}
+    <p className="scan-message">{message}</p>
+    {amounts.length > 0 && <div className="scan-results"><span>辨識到的金額</span><div>{amounts.map((value) => <button key={value} onClick={() => setManual(String(value))}>{currency.symbol} {numberFormat.format(value)}</button>)}</div></div>}
+    <div className="form-card scan-manual"><label>確認商品金額 ({currency.code})<div className="inline-input"><input inputMode="decimal" placeholder="0" value={manual} onChange={(event) => setManual(cleanNumber(event.target.value))} /><button disabled={!manualValue} onClick={() => manualValue > 0 && onUse(manualValue)}>帶入換算</button></div></label></div>
+    <p className="helper-text">OCR 是輔助功能，折扣價、多件價與小數點可能判讀錯誤；帶入前請務必對照現場價牌。</p>
+  </div>
 }
 
 function HistoryList({ records, onClear }: { records: ConversionRecord[]; onClear: () => void }) {

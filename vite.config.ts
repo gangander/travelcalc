@@ -9,6 +9,16 @@ export default defineConfig({
     VitePWA({
       registerType: 'prompt',
       includeAssets: ['icon.svg'],
+      workbox: {
+        runtimeCaching: [{
+          urlPattern: /^https:\/\/cdn\.jsdelivr\.net\//,
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'travelcalc-ocr-v1',
+            expiration: { maxEntries: 12, maxAgeSeconds: 60 * 60 * 24 * 30 },
+          },
+        }],
+      },
       manifest: {
         name: 'TravelCalc 旅行換算',
         short_name: 'TravelCalc',
