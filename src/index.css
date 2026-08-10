@@ -192,6 +192,9 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .tax-rule-card > div { display: flex; flex: 1; flex-direction: column; }
 .tax-rule-card strong { font-size: 11px; }
 .tax-rule-card small { margin-top: 3px; color: #718791; font-size: 8px; }
+.tax-rule-card a { width: fit-content; margin-top: 5px; color: #8dd5d2; font-size: 8px; text-decoration: none; }
+.tax-rule-card.unavailable { background: linear-gradient(135deg, rgba(196,132,119,.08), rgba(255,255,255,.025)); border-color: rgba(205,138,124,.13); }
+.tax-rule-card.unavailable .tax-icon { color: #d39b8e; background: rgba(205,138,124,.1); }
 .eligibility { border-radius: 100px; padding: 5px 8px; color: #a7887e; background: rgba(225,137,111,.08); font-size: 8px; }
 .eligibility.yes { color: #8ed4b0; background: rgba(104,198,145,.09); }
 .shopping-form { margin-top: 11px; }
@@ -286,6 +289,7 @@ html[data-theme='light'] .sheet header button { color: #314c55; background: rgba
 html[data-theme='light'] .theme-picker { background: rgba(66,96,106,.08); }
 html[data-theme='light'] .theme-picker button { color: #667b85; }
 html[data-theme='light'] .theme-picker button.active { color: #236d69; background: rgba(255,255,255,.9); box-shadow: 0 3px 12px rgba(52,78,86,.1); }
+html[data-theme='light'] .tax-rule-card a { color: #237c78; }
 html[data-theme='light'] input,
 html[data-theme='light'] select { color: #21363f; }
 html[data-theme='light'] .toast { color: #f2ffff; background: rgba(39,82,84,.94); }

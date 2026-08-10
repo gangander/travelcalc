@@ -10,6 +10,7 @@ import type { CardSettings, ConversionRecord, CurrencyCode, ExchangeRate, Expens
 type Currency = { code: CurrencyCode; symbol: string; flag: string; name: string }
 type DestinationId = 'kr' | 'jp' | 'th' | 'us' | 'sg' | 'eu'
 type Destination = { id: DestinationId; country: string; flag: string; currency: Currency }
+type TaxRefundRule = { eligible: boolean; minimum: number | null; defaultRefundRate: number; rule: string; detail: string; officialUrl: string }
 type Tab = 'convert' | 'shop' | 'trips' | 'wallet'
 type Sheet = 'settings' | 'history' | 'expense' | 'trip' | null
 type ThemePreference = 'system' | 'light' | 'dark'
@@ -31,6 +32,14 @@ const DESTINATIONS: Destination[] = [
   { id: 'sg', country: '新加坡', flag: '🇸🇬', currency: SGD },
   { id: 'eu', country: '歐元區', flag: '🇪🇺', currency: EUR },
 ]
+const TAX_REFUND_RULES: Record<DestinationId, TaxRefundRule> = {
+  kr: { eligible: true, minimum: 15000, defaultRefundRate: 7, rule: '單筆滿 ₩15,000', detail: '於 Tax Refund 商店購買；即時退稅單筆須低於 ₩1,000,000，並依規定攜帶商品出境。', officialUrl: 'https://english.visitkorea.or.kr/svc/contents/contentsView.do?menuSn=929&vcontsId=248767' },
+  jp: { eligible: true, minimum: 5000, defaultRefundRate: 10, rule: '同店同日未稅滿 ¥5,000', detail: '限合格免稅店與短期旅客；消耗品上限 ¥500,000，離境時需持有商品並出示護照。', officialUrl: 'https://www.customs.go.jp/english/c-answer_e/pdf/FAX5004e.pdf' },
+  th: { eligible: true, minimum: 2000, defaultRefundRate: 4, rule: '同店同日滿 ฿2,000', detail: '商店須有 VAT Refund for Tourists 標誌，購買時出示護照並索取 P.P.10，商品須於 60 天內帶出境。', officialUrl: 'https://vrtweb.rd.go.th/81.html' },
+  us: { eligible: false, minimum: null, defaultRefundRate: 0, rule: '沒有全國統一旅客退稅', detail: '美國政府不退還外國旅客的銷售稅；少數州或商家方案可能不同，請依當地規定確認。', officialUrl: 'https://www.help.cbp.gov/s/article/Article-1039?language=en_US' },
+  sg: { eligible: true, minimum: 100, defaultRefundRate: 7, rule: '同一 GST 商戶滿 S$100', detail: '可合併同一商戶最多 3 張同日收據；須為 eTRS 參與商店，並於購買後 2 個月內攜貨離境。', officialUrl: 'https://www.iras.gov.sg/taxes/goods-services-tax-%28gst%29/consumers/tourist-refund-scheme' },
+  eu: { eligible: true, minimum: null, defaultRefundRate: 12, rule: '門檻依購買國家而異', detail: '限非歐盟居民；商品與文件須於購買後 3 個月內在最後離開歐盟時交海關確認，實退額會扣除服務費。', officialUrl: 'https://europa.eu/youreurope/citizens/consumers/shopping/vat/index_en.htm' },
+}
 const CURRENCIES = [TWD, KRW, JPY, THB, USD, SGD, EUR]
 const currencyByCode = (code: CurrencyCode) => CURRENCIES.find((currency) => currency.code === code) ?? TWD
 const DEFAULT_RATES: Record<Exclude<CurrencyCode, 'TWD'>, number> = { KRW: 45.32, JPY: 4.7, THB: 1.08, USD: 0.031, SGD: 0.04, EUR: 0.026 }
@@ -97,7 +106,7 @@ function App() {
     return CARD_PRESETS.find((preset) => preset.presetId === saved.presetId) ?? saved
   })
   const [paymentMethodId, setPaymentMethodId] = useState<PaymentMethodId>(() => loadStored('travelcalc:paymentMethod', 'card'))
-  const [products, setProducts] = useState<SavedProduct[]>(() => loadStored('travelcalc:products', []))
+  const [products, setProducts] = useState<SavedProduct[]>(() => loadStored<Array<SavedProduct & { priceKrw?: number }>>('travelcalc:products', []).map((product) => ({ ...product, price: product.price ?? product.priceKrw ?? 0, currency: product.currency ?? 'KRW' })))
   const [toast, setToast] = useState('')
   const [theme, setTheme] = useState<ThemePreference>(() => loadStored('travelcalc:theme', 'system'))
 
@@ -163,7 +172,6 @@ function App() {
     if (!cardAppliesTo(card, selected.id)) setCard(DEFAULT_CARD)
     const currentPayment = PAYMENT_METHODS.find((method) => method.id === paymentMethodId) ?? PAYMENT_METHODS[0]
     if (!paymentAppliesTo(currentPayment, selected.id)) setPaymentMethodId('card')
-    if (selected.id !== 'kr' && tab === 'shop') setTab('convert')
   }
 
   function swap() {
@@ -209,13 +217,13 @@ function App() {
         <div className="destination-picker" aria-label="選擇目的地">{DESTINATIONS.map((item) => <button key={item.id} className={item.id === destination.id ? 'active' : ''} onClick={() => selectDestination(item.id)}><span>{item.flag}</span>{item.country}</button>)}</div>
 
         {tab === 'convert' && <ConvertView destination={destination} from={from} to={to} amount={amount} converted={converted} rate={rate} loading={rateLoading} error={rateError} onAmount={setAmount} onSwap={swap} onRefresh={refreshRate} onSettings={() => { setRateDraft(String(rate.rate)); setSheet('settings') }} onRecord={saveConversion} onShop={() => setTab('shop')} onWallet={() => setTab('wallet')} onHistory={() => setSheet('history')} />}
-        {tab === 'shop' && destination.id === 'kr' && <ShoppingView rate={rate.rate} products={products} onSave={(product) => { setProducts((current) => [product, ...current]); setToast('商品已收藏') }} onDelete={(id) => setProducts((current) => current.filter((product) => product.id !== id))} onExpense={(product) => { if (!activeTrip) return setToast('請先建立旅程'); const total = product.priceKrw * product.quantity; const expense: Expense = { id: newId(), title: product.name, amount: total, currency: 'KRW', twdAmount: total / rate.rate, category: '購物', createdAt: new Date().toISOString() }; setTrips((current) => current.map((trip) => trip.id === activeTrip.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setToast('已加入旅程花費') }} />}
+        {tab === 'shop' && <ShoppingView key={destination.id} destination={destination} rate={rate.rate} products={products.filter((product) => product.currency === destination.currency.code)} onSave={(product) => { setProducts((current) => [product, ...current]); setToast('商品已收藏') }} onDelete={(id) => setProducts((current) => current.filter((product) => product.id !== id))} onExpense={(product) => { if (!activeTrip) return setToast('請先建立旅程'); const total = product.price * product.quantity; const expense: Expense = { id: newId(), title: product.name, amount: total, currency: product.currency, twdAmount: total / rate.rate, category: '購物', createdAt: new Date().toISOString() }; setTrips((current) => current.map((trip) => trip.id === activeTrip.id ? { ...trip, expenses: [expense, ...trip.expenses] } : trip)); setToast('已加入旅程花費') }} />}
         {tab === 'trips' && <TripsView trips={trips} activeTripId={activeTripId} rate={rate.rate} onSelect={setActiveTripId} onAdd={() => setSheet('trip')} onExpense={() => setSheet('expense')} />}
         {tab === 'wallet' && <WalletView destination={destination} card={card} setCard={setCard} paymentMethodId={paymentMethodId} setPaymentMethodId={setPaymentMethodId} base={cardBaseTwd} fee={cardFee} reward={cardReward} net={cardNet} amount={numericAmount} from={from} />}
 
         <nav className="bottom-nav" aria-label="主要導覽">
           <button className={tab === 'convert' ? 'active' : ''} onClick={() => setTab('convert')}><ArrowDownUp size={19} />換算</button>
-          {destination.id === 'kr' && <button className={tab === 'shop' ? 'active' : ''} onClick={() => setTab('shop')}><ShoppingBag size={19} />退稅</button>}
+          <button className={tab === 'shop' ? 'active' : ''} onClick={() => setTab('shop')}><ShoppingBag size={19} />退稅</button>
           <button className={tab === 'trips' ? 'active' : ''} onClick={() => setTab('trips')}><Plane size={19} />旅程</button>
           <button className={tab === 'wallet' ? 'active' : ''} onClick={() => setTab('wallet')}><WalletCards size={19} />錢包</button>
         </nav>
@@ -245,7 +253,7 @@ function ConvertView(props: ConvertProps) {
       <div className="rate-meta"><span>{props.error || (props.rate.date ? `資料日期 ${props.rate.date}` : '準備更新匯率')}</span></div>
     </section>
     <section className="quick-actions">
-      {props.destination.id === 'kr' && <button onClick={props.onShop}><span className="action-icon coral"><ShoppingBag size={21} /></span><strong>韓國退稅</strong><small>退稅・收藏</small></button>}
+      <button onClick={props.onShop}><span className="action-icon coral"><ShoppingBag size={21} /></span><strong>{props.destination.country}退稅</strong><small>規則・試算</small></button>
       <button onClick={props.onWallet}><span className="action-icon blue"><CreditCard size={21} /></span><strong>卡片試算</strong><small>回饋・手續費</small></button>
       <button onClick={props.onHistory}><span className="action-icon violet"><History size={21} /></span><strong>換算紀錄</strong><small>最近使用</small></button>
     </section>
@@ -266,31 +274,31 @@ function TripsView({ trips, activeTripId, rate, onSelect, onAdd, onExpense }: { 
   </section>
 }
 
-function ShoppingView({ rate, products, onSave, onDelete, onExpense }: { rate: number; products: SavedProduct[]; onSave: (product: SavedProduct) => void; onDelete: (id: string) => void; onExpense: (product: SavedProduct) => void }) {
+function ShoppingView({ destination, rate, products, onSave, onDelete, onExpense }: { destination: Destination; rate: number; products: SavedProduct[]; onSave: (product: SavedProduct) => void; onDelete: (id: string) => void; onExpense: (product: SavedProduct) => void }) {
+  const rule = TAX_REFUND_RULES[destination.id]
   const [name, setName] = useState('')
-  const [price, setPrice] = useState('50000')
+  const [price, setPrice] = useState(rule.minimum ? String(rule.minimum) : '100')
   const [quantity, setQuantity] = useState('1')
-  const [refundRate, setRefundRate] = useState('7')
-  const totalKrw = (Number(price) || 0) * Math.max(1, Number(quantity) || 1)
-  const estimatedRefund = totalKrw * (Number(refundRate) || 0) / 100
-  const afterRefund = totalKrw - estimatedRefund
-  const eligible = totalKrw >= 15000
-  const immediateEligible = eligible && totalKrw < 1_000_000
+  const [refundRate, setRefundRate] = useState(String(rule.defaultRefundRate))
+  const total = (Number(price) || 0) * Math.max(1, Number(quantity) || 1)
+  const estimatedRefund = rule.eligible ? total * (Number(refundRate) || 0) / 100 : 0
+  const afterRefund = total - estimatedRefund
+  const meetsMinimum = rule.eligible && (rule.minimum === null || total >= rule.minimum)
 
   function productFromForm(): SavedProduct | null {
-    if (!name.trim() || totalKrw <= 0) return null
-    return { id: newId(), name: name.trim(), priceKrw: Number(price), quantity: Math.max(1, Number(quantity) || 1), refundRate: Number(refundRate) || 0, createdAt: new Date().toISOString() }
+    if (!name.trim() || total <= 0) return null
+    return { id: newId(), name: name.trim(), price: Number(price), currency: destination.currency.code, quantity: Math.max(1, Number(quantity) || 1), refundRate: rule.eligible ? Number(refundRate) || 0 : 0, createdAt: new Date().toISOString() }
   }
 
   return <section className="page-view shopping-view">
-    <div className="page-heading"><div><p>Korea tax refund</p><h2>購物試算</h2></div><span className="wallet-badge"><ShoppingBag size={19} /></span></div>
-    <div className="tax-rule-card"><span className="tax-icon"><ReceiptText size={19} /></span><div><strong>{eligible ? (immediateEligible ? '符合即時退稅金額' : '可申請一般退稅') : '尚未達退稅門檻'}</strong><small>單筆滿 ₩15,000 · 購買後 3 個月內離境</small></div><span className={`eligibility ${eligible ? 'yes' : ''}`}>{eligible ? '符合' : '未達'}</span></div>
-    <div className="form-card shopping-form"><label>商品名稱<input placeholder="例如：Olive Young 保養品" value={name} onChange={(e) => setName(e.target.value)} /></label><div className="form-grid"><label>單價 KRW<input inputMode="numeric" value={price} onChange={(e) => setPrice(cleanNumber(e.target.value))} /></label><label>數量<input inputMode="numeric" value={quantity} onChange={(e) => setQuantity(cleanNumber(e.target.value))} /></label></div><label>預估實退比例 (%)<input inputMode="decimal" value={refundRate} onChange={(e) => setRefundRate(cleanNumber(e.target.value))} /></label></div>
-    <div className="refund-card"><div className="refund-total"><div><small>商品總額</small><strong>₩ {moneyFormat.format(totalKrw)}</strong><span>約 NT$ {moneyFormat.format(totalKrw / rate)}</span></div><div><small>預估退稅</small><strong className="refund-green">− ₩ {moneyFormat.format(estimatedRefund)}</strong><span>{refundRate}% 試算</span></div></div><div className="after-refund"><span>退稅後約付</span><div><strong>₩ {moneyFormat.format(afterRefund)}</strong><small>NT$ {moneyFormat.format(afterRefund / rate)}</small></div></div></div>
+    <div className="page-heading"><div><p>{destination.country} tax refund</p><h2>購物退稅</h2></div><span className="wallet-badge"><ShoppingBag size={19} /></span></div>
+    <div className={`tax-rule-card ${rule.eligible ? '' : 'unavailable'}`}><span className="tax-icon"><ReceiptText size={19} /></span><div><strong>{rule.rule}</strong><small>{rule.detail}</small><a href={rule.officialUrl} target="_blank" rel="noreferrer">查看官方規定</a></div>{rule.eligible && <span className={`eligibility ${meetsMinimum ? 'yes' : ''}`}>{meetsMinimum ? '符合' : '未達'}</span>}</div>
+    <div className="form-card shopping-form"><label>商品名稱<input placeholder="例如：保養品、服飾" value={name} onChange={(e) => setName(e.target.value)} /></label><div className="form-grid"><label>單價 {destination.currency.code}<input inputMode="numeric" value={price} onChange={(e) => setPrice(cleanNumber(e.target.value))} /></label><label>數量<input inputMode="numeric" value={quantity} onChange={(e) => setQuantity(cleanNumber(e.target.value))} /></label></div>{rule.eligible && <label>預估實退比例 (%)<input inputMode="decimal" value={refundRate} onChange={(e) => setRefundRate(cleanNumber(e.target.value))} /></label>}</div>
+    <div className="refund-card"><div className="refund-total"><div><small>商品總額</small><strong>{destination.currency.symbol} {moneyFormat.format(total)}</strong><span>約 NT$ {moneyFormat.format(total / rate)}</span></div><div><small>{rule.eligible ? '預估退稅' : '旅客退稅'}</small><strong className={rule.eligible ? 'refund-green' : ''}>{rule.eligible ? `− ${destination.currency.symbol} ${moneyFormat.format(estimatedRefund)}` : '不適用'}</strong><span>{rule.eligible ? `${refundRate}% 試算` : '美國無全國制度'}</span></div></div><div className="after-refund"><span>{rule.eligible ? '退稅後約付' : '預估支付'}</span><div><strong>{destination.currency.symbol} {moneyFormat.format(afterRefund)}</strong><small>NT$ {moneyFormat.format(afterRefund / rate)}</small></div></div></div>
     <div className="shop-actions"><button onClick={() => { const product = productFromForm(); if (product) { onSave(product); setName('') } }} disabled={!name.trim()}><Heart size={16} />收藏商品</button><button className="accent" onClick={() => { const product = productFromForm(); if (product) onExpense(product) }} disabled={!name.trim()}><Plus size={16} />加入花費</button></div>
-    <p className="helper-text tax-note">退稅額會因商品、退稅業者與手續費而異。App 預設以售價 7% 估算，可依退稅單自行調整；這不是保證退稅金額。</p>
+    <p className="helper-text tax-note">預估值會因商品類別、店家、服務商手續費及退稅方式不同而變動，可依退稅單調整比例；此試算不是保證退稅金額。</p>
     <div className="section-title"><h3>收藏商品</h3><span>{products.length} 項</span></div>
-    {products.length === 0 ? <EmptyState icon={<Heart />} title="還沒有收藏商品" text="輸入商品名稱與價格，旅行中就能快速比較。" /> : <div className="product-list">{products.map((product) => { const total = product.priceKrw * product.quantity; return <div className="product-item" key={product.id}><span className="product-icon"><ShoppingBag size={17} /></span><div><strong>{product.name}</strong><small>₩{moneyFormat.format(product.priceKrw)} × {product.quantity} · 退稅 {product.refundRate}%</small></div><div className="product-price"><strong>NT$ {moneyFormat.format((total * (1 - product.refundRate / 100)) / rate)}</strong><span><button onClick={() => onExpense(product)} aria-label={`將 ${product.name} 加入花費`}><Plus size={14} /></button><button onClick={() => onDelete(product.id)} aria-label={`刪除 ${product.name}`}><Trash2 size={13} /></button></span></div></div> })}</div>}
+    {products.length === 0 ? <EmptyState icon={<Heart />} title="還沒有收藏商品" text="輸入商品名稱與價格，旅行中就能快速比較。" /> : <div className="product-list">{products.map((product) => { const productTotal = product.price * product.quantity; return <div className="product-item" key={product.id}><span className="product-icon"><ShoppingBag size={17} /></span><div><strong>{product.name}</strong><small>{destination.currency.symbol}{moneyFormat.format(product.price)} × {product.quantity} · 退稅 {product.refundRate}%</small></div><div className="product-price"><strong>NT$ {moneyFormat.format((productTotal * (1 - product.refundRate / 100)) / rate)}</strong><span><button onClick={() => onExpense(product)} aria-label={`將 ${product.name} 加入花費`}><Plus size={14} /></button><button onClick={() => onDelete(product.id)} aria-label={`刪除 ${product.name}`}><Trash2 size={13} /></button></span></div></div> })}</div>}
   </section>
 }
 

@@ -51,7 +51,8 @@ export type CardSettings = {
 export type SavedProduct = {
   id: string
   name: string
-  priceKrw: number
+  price: number
+  currency: CurrencyCode
   quantity: number
   refundRate: number
   createdAt: string
