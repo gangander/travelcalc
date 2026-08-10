@@ -80,8 +80,8 @@ function App() {
   const [sheet, setSheet] = useState<Sheet>(null)
   const [destinationId, setDestinationId] = useState<DestinationId>(() => loadStored('travelcalc:destination', 'kr'))
   const destination = DESTINATIONS.find((item) => item.id === destinationId) ?? DESTINATIONS[0]
-  const [from, setFrom] = useState<Currency>(TWD)
-  const [to, setTo] = useState<Currency>(() => destination.currency)
+  const [from, setFrom] = useState<Currency>(() => destination.currency)
+  const [to, setTo] = useState<Currency>(TWD)
   const [amount, setAmount] = useState('1000')
   const [rate, setRate] = useState<ExchangeRate>(() => cachedRate(destination.currency.code) ?? defaultRate(destination.currency.code))
   const [rateDraft, setRateDraft] = useState(String(rate.rate))
@@ -142,8 +142,8 @@ function App() {
   function selectDestination(id: DestinationId) {
     const selected = DESTINATIONS.find((item) => item.id === id) ?? DESTINATIONS[0]
     setDestinationId(selected.id)
-    setFrom(TWD)
-    setTo(selected.currency)
+    setFrom(selected.currency)
+    setTo(TWD)
     setRate(cachedRate(selected.currency.code) ?? defaultRate(selected.currency.code))
     setRateDraft(String((cachedRate(selected.currency.code) ?? defaultRate(selected.currency.code)).rate))
     if (!cardAppliesTo(card, selected.id)) setCard(DEFAULT_CARD)
